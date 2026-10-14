@@ -10,7 +10,13 @@ const App: React.FC = () => {
     void webflow.setExtensionSize('large').catch(error => console.warn('Could not resize LaunchGuard', error));
     webflow.getSiteInfo().then(setSite).catch(() => setError('Open LaunchGuard inside Webflow Designer to access the current site.'));
   }, []);
-  return error ? <p role="alert">{error}</p> : site ? <AuditApp designerSite={site} apiBase={__LAUNCHGUARD_API__}/> : <p>Loading site...</p>;
+  const navigatePage = async (id: string) => {
+    const pages = await webflow.getAllPagesAndFolders();
+    const page = pages.find((item): item is Page => item.type === 'Page' && item.id === id);
+    if (!page) throw new Error('This page could not be mapped in the current Designer context. Open it using the Pages panel.');
+    await webflow.switchPage(page);
+  };
+  return error ? <p role="alert">{error}</p> : site ? <AuditApp designerSite={site} apiBase={__LAUNCHGUARD_API__} navigatePage={navigatePage}/> : <p>Loading site...</p>;
 };
 
 const rootEl = document.getElementById("root");

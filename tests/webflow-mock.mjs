@@ -1,5 +1,6 @@
 // Loaded only by the integration test's child process.
 globalThis.fetch = async input => {
+  if(process.env.MOCK_DELAY_MS)await new Promise(done=>setTimeout(done,Number(process.env.MOCK_DELAY_MS)));
   const path = new URL(input).pathname;
   const data = {
     '/oauth/access_token': {access_token: 'mock-webflow-token'},

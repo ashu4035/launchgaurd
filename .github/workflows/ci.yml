@@ -9,6 +9,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm install --no-audit --no-fund
+      - run: npm ci
       - run: npm test
+      - run: npm run lint
       - run: npm run build
+      - run: npm run build-webpack --workspace=LaunchGuard
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

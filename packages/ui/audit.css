@@ -1,22 +1,62 @@
 * { box-sizing: border-box; }
-body { margin: 0; background: #f4f6f7; color: #20272b; font: 14px/1.5 system-ui, sans-serif; }
+body { margin: 0; background: #171a1c; color: #e4e8ea; font: 14px/1.5 system-ui, sans-serif; }
 .audit-app { max-width: 1000px; margin: auto; padding: 24px; }
 .audit-app header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #167e69; padding-bottom: 16px; gap: 12px; }
 .audit-app h1 { font-size: 26px; margin: 0; }
 .audit-app h2 { font-size: 19px; }
 .audit-app h3 { font-size: 15px; }
 .audit-app section { padding: 20px 0; border-bottom: 1px solid #d5dce0; }
-.audit-app button, .audit-action { border: 1px solid #b5c2c8; padding: 8px 14px; border-radius: 4px; background: white; color: inherit; cursor: pointer; text-decoration: none; font: inherit; }
+.audit-app button, .audit-action { border: 1px solid #465159; padding: 8px 14px; border-radius: 4px; background: #252b30; color: inherit; cursor: pointer; text-decoration: none; font: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; }
 .audit-app .audit-action { display: inline-block; background: #167e69; color: white; border-color: #167e69; margin-top: 12px; }
 .audit-app button:disabled { opacity: .5; cursor: default; }
-.audit-app select, .audit-app input:not([type=checkbox]) { display: block; width: 100%; padding: 9px; border: 1px solid #b5c2c8; border-radius: 4px; margin: 6px 0 14px; font: inherit; }
+.audit-app select, .audit-app textarea, .audit-app input:not([type=checkbox]) { display: block; width: 100%; min-width: 0; padding: 9px; border: 1px solid #465159; border-radius: 4px; margin: 6px 0 14px; font: inherit; color: inherit; background: #20262a; }
 .audit-check { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
 .audit-app fieldset { border: 1px solid #d5dce0; margin: 10px 0; }
 .audit-app article { padding: 12px 0; border-bottom: 1px solid #d5dce0; }
 .audit-history { display: flex; width: 100%; justify-content: space-between; gap: 12px; margin: 8px 0; flex-wrap: wrap; text-align: left; }
-.audit-error { color: #a22b35; background: #fff0f1; padding: 12px; }
+.audit-error { color: #ffd1d4; background: #49262a; padding: 12px; overflow-wrap: anywhere; }
 .audit-app small { color: #65747c; font-weight: normal; }
 .page-check.passed { border-left: 3px solid #167e69; padding-left: 12px; }
 .page-check.issues { border-left: 3px solid #b84b38; padding-left: 12px; }
 .page-check.skipped { border-left: 3px solid #7a858b; padding-left: 12px; }
+.audit-app a { color: #81d6c5; display: inline-flex; gap: 8px; align-items: center; overflow-wrap: anywhere; }
+.audit-brand, .toolbar, .section-heading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.audit-brand p { margin: 3px 0 0; color: #acb9c0; }
+.section-heading { justify-content: space-between; margin: 16px 0; }
+.muted, .audit-app small { color: #acb9c0; }
+.tabs { display: flex; gap: 4px; padding-top: 16px; border-bottom: 1px solid #465159; }
+.tabs button { background: transparent; border: none; border-radius: 0; }
+.tabs button[aria-current=page] { border-bottom: 2px solid #55c6ab; color: #81d6c5; }
+.setup-grid, .scope-grid, .check-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px 20px; }
+.audit-app details { padding: 12px 0; border-bottom: 1px solid #465159; }
+.audit-app summary { cursor: pointer; font-weight: 600; }
+.audit-app fieldset { min-width: 0; border-color: #465159; }
+.scope-grid fieldset { max-height: 280px; overflow: auto; }
+.scope-grid label { overflow-wrap: anywhere; }
+.audit-notice, .audit-success { padding: 12px; background: #313128; color: #f0dfad; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.audit-success { background: #183b31; color: #a3e3c9; }
+.stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin: 20px 0; }
+.stats > div { border-bottom: 1px solid #465159; padding: 8px 0; }
+.stats strong { display: block; font-size: 24px; }
+.stats span { display: block; color: #acb9c0; font-size: 12px; }
+.filters { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin-top: 20px; }
+.search { display: flex; align-items: center; gap: 8px; grid-column: 1/-1; }
+.filters input, .filters select { margin-bottom: 0!important; }
+.finding-row { display: grid!important; grid-template-columns: 20px minmax(0,1fr) auto auto; width: 100%; text-align: left; padding: 12px!important; margin: 8px 0; justify-content: stretch!important; }
+.finding-row strong, .finding-row small { display: block; overflow-wrap: anywhere; }
+.status, .severity { font-size: 12px; color: #e2d499; overflow-wrap: anywhere; }
+.coverage-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px 12px; border-bottom: 1px solid #465159; padding: 8px 0; }
+.coverage-row small { grid-column: 1/-1; }
+.coverage-row .pass, .coverage-row .passed { color: #81d6c5; }
+.empty, .connection { text-align: center; padding: 40px 12px; }
+.overlay { position: fixed; inset: 0; background: #0009; display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 100; }
+.audit-app .issue-dialog { width: min(620px,100%); max-height: calc(100dvh - 32px); overflow: auto; padding: 20px; background: #20262a; border: 1px solid #465159; border-radius: 6px; }
+.issue-dialog dl { display: grid; grid-template-columns: 110px minmax(0,1fr); gap: 8px; }
+.issue-dialog dt { color: #acb9c0; }
+.issue-dialog dd { margin: 0; overflow-wrap: anywhere; }
+.audit-app :focus-visible { outline: 2px solid #81d6c5; outline-offset: 3px; }
+.audit-app section, .audit-app article { border-bottom-color: #465159; }
+.audit-app h2, .audit-app h3 { overflow-wrap: anywhere; }
+@media(max-width:350px) { .tabs button { font-size: 12px; padding: 8px; } .audit-brand { align-items: flex-start; } .audit-brand h1 { font-size: 20px; } }
+@media(max-width:600px) { .setup-grid,.scope-grid,.check-grid { grid-template-columns: 1fr; } .stats,.filters { grid-template-columns: repeat(2,minmax(0,1fr)); } .finding-row { grid-template-columns: 20px minmax(0,1fr)!important; } .finding-row .status { grid-column: 2; } .finding-row .severity { grid-column: 2; } }
 @media (max-width: 500px) { .audit-app { padding: 14px; } .audit-app header { flex-wrap: wrap; } .audit-app header > div { min-width: 0; } .audit-app h1 { font-size: 22px; overflow-wrap: anywhere; } }

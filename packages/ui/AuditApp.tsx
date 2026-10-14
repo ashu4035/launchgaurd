@@ -1,88 +1,110 @@
 import React, {useEffect, useState, useRef} from 'react';
+import {ShieldCheck, RefreshCw, Play, X, Search, Download, Copy, ExternalLink, CheckCircle2, AlertTriangle, Clock3, LogOut, RotateCcw, Link2} from 'lucide-react';
 import './audit.css';
-type Site = {id: string; displayName?: string; name?: string};
-type Scan = {id: string; siteId: string; status: string; createdAt: string; issues?: number; error?: string; pageResults?: {pageId: string; name: string; status: 'passed' | 'issues' | 'skipped'; issues: number; detail: string}[]; findings?: {id: string; title: string; detail: string; fix: string}[]};
-type Collection = {id: string; displayName: string; fields?: {slug: string; displayName: string; isRequired?: boolean}[]};
-export function AuditApp({designerSite, apiBase = ''}: {designerSite?: {siteId: string; siteName: string}; apiBase?: string}) {
-  const [sites, setSites] = useState<Site[]>([]), [siteId, setSiteId] = useState('');
-  const [collections, setCollections] = useState<Collection[]>([]), [rules, setRules] = useState<string[]>([]);
-  const [history, setHistory] = useState<Scan[]>([]), [scan, setScan] = useState<Scan | null>(null);
-  const [error, setError] = useState(''), [busy, setBusy] = useState(false);
-  const [seo, setSeo] = useState(true), [query, setQuery] = useState(''), [connected, setConnected] = useState(false);
-  const authWindow = useRef<Window | null>(null);
-  const sessionKey = 'launchguard-session:' + apiBase;
-  const [extensionSession, setExtensionSession] = useState(() => designerSite ? sessionStorage.getItem(sessionKey) || '' : '');
-  useEffect(() => {
-    if (!designerSite || !apiBase) return;
-    const listener = (event: MessageEvent) => {
-      if (event.origin !== new URL(apiBase).origin || event.source !== authWindow.current || event.data?.type !== 'launchguard-connected' || !/^[a-f0-9]{64}$/.test(event.data.session || '')) return;
-      sessionStorage.setItem(sessionKey, event.data.session);
-      setExtensionSession(event.data.session);
-      authWindow.current = null;
-    };
-    window.addEventListener('message', listener);
-    return () => window.removeEventListener('message', listener);
-  }, [apiBase, designerSite?.siteId]);
-  const connect = () => {
-    setError('');
-    authWindow.current = window.open(apiBase + '/auth/start?client_origin=' + encodeURIComponent(window.location.origin), 'launchguard-oauth', 'popup,width=650,height=750');
-    if (!authWindow.current) setError('Allow popups for this site, then connect again.');
-  };
-  const api = async (path: string, body?: unknown) => {
-    const response = await fetch(apiBase + '/api' + path, {credentials: designerSite ? 'omit' : 'include', headers: {...(extensionSession ? {Authorization: 'Bearer ' + extensionSession} : {}), ...(body !== undefined ? {'Content-Type': 'application/json'} : {})}, ...(body !== undefined ? {method: 'POST', body: JSON.stringify(body)} : {})});
-    const data = await response.json();
-    if (response.status === 401) {setConnected(false); setSites([]); if (designerSite) {sessionStorage.removeItem(sessionKey); setExtensionSession('');}}
-    if (!response.ok) throw new Error(data.error || 'Request failed');
-    return data;
-  };
-  const refresh = async () => {
-    try {
-      setError(''); const data = await api('/sites');
-      setSites(data.sites); setConnected(true);
-      setSiteId(current => designerSite?.siteId || current || data.sites[0]?.id || '');
-      setHistory((await api('/scans')).scans);
-    } catch (e) {setError((e as Error).message);}
-  };
-  useEffect(() => {void refresh();}, [designerSite?.siteId, extensionSession]);
-  useEffect(() => {
-    let active = true; setCollections([]); setRules([]); setScan(null);
-    if (siteId) api('/collections?siteId=' + encodeURIComponent(siteId)).then(data => {
-      if (active) {setCollections(data.collections); setRules(data.collections.flatMap((c: Collection) => (c.fields || []).filter(f => f.isRequired).map(f => c.id + ':' + f.slug)));}
-    }).catch(e => {if (active) setError(e.message);});
-    return () => {active = false;};
-  }, [siteId]);
-  useEffect(() => {
-    if (!scan || !['queued', 'running'].includes(scan.status)) return;
-    let active = true;
-    const timer = setInterval(() => {api('/scans/' + scan.id).then(data => {
-      if (active) {setScan(data.scan); if (!['queued', 'running'].includes(data.scan.status)) void refresh();}
-    }).catch(e => {if (active) setError(e.message);});}, 1500);
-    return () => {active = false; clearInterval(timer);};
-  }, [scan?.id, scan?.status]);
-  const run = async () => {
-    setBusy(true); setError('');
-    try {
-      const result = await api('/scans', {siteId, checks: seo ? ['SEO metadata'] : [], rules: rules.map(key => {const [collectionId, fieldSlug] = key.split(':'); return {collectionId, fieldSlug, required: true};})});
-      setScan((await api('/scans/' + result.id)).scan);
-    } catch (e) {setError((e as Error).message);} finally {setBusy(false);}
-  };
-  const running = !!scan && ['queued', 'running'].includes(scan.status);
-  return <main className="audit-app">
-    <header><div><h1>LaunchGuard</h1><p>{designerSite ? designerSite.siteName : 'Website audits'}</p></div><button onClick={() => void refresh()}>Refresh</button></header>
-    {error && <p role="alert" className="audit-error">{error}</p>}
-    {!connected ? <section><h2>Connect Webflow</h2>{designerSite ? <button className="audit-action" onClick={connect}>Connect Webflow</button> : <a className="audit-action" href={apiBase + '/auth/start'}>Connect Webflow</a>}</section> : <>
-      <section><h2>New audit</h2><label>Website<select value={siteId} disabled={!!designerSite} onChange={e => setSiteId(e.target.value)}><option value="">Select a site</option>{sites.map(s => <option key={s.id} value={s.id}>{s.displayName || s.name || s.id}</option>)}</select></label>
-      <label className="audit-check"><input type="checkbox" checked={seo} onChange={e => setSeo(e.target.checked)}/>Page SEO settings</label>
-      <h3>CMS fields to check for missing content</h3>{collections.map(c => <fieldset key={c.id}><legend>{c.displayName}</legend>{(c.fields || []).map(f => {const key = c.id + ':' + f.slug; return <label className="audit-check" key={key}><input type="checkbox" checked={rules.includes(key)} onChange={e => setRules(current => e.target.checked ? [...current, key] : current.filter(x => x !== key))}/>{f.displayName || f.slug}</label>;})}</fieldset>)}
-      <button className="audit-action" disabled={busy || running || !siteId || (!seo && !rules.length)} onClick={() => void run()}>{busy ? 'Starting...' : 'Run audit'}</button></section>
-      {scan && <section><h2>Page checks</h2>
-        {scan.pageResults?.length ? scan.pageResults.map(page => <article key={page.pageId} className={'page-check ' + page.status}>
-          <h3>{page.name} <small>{page.status === 'passed' ? 'Passed' : page.status === 'skipped' ? 'Skipped' : `${page.issues} SEO issues`}</small></h3>
-          <p role={scan.status === 'complete' && page.status === 'passed' ? 'status' : undefined}>{page.status === 'passed' ? `${page.name}: no issues found in SEO title and description settings.` : page.detail}</p>
-        </article>) : <p>{running ? 'Page checks pending.' : 'No page checks recorded in this audit. Run a new audit to see page status.'}</p>}
-      </section>}
-      {scan && <section><h2>Audit results <small>{scan.status}</small></h2>{scan.error && <p role="alert">{scan.error}</p>}{running && <button onClick={() => api('/scans/' + scan.id + '/cancel', {}).catch(e => setError(e.message))}>Cancel audit</button>}<input aria-label="Search findings" placeholder="Search findings" value={query} onChange={e => setQuery(e.target.value)}/>{(scan.findings || []).filter(f => (f.title + f.detail).toLowerCase().includes(query.toLowerCase())).map(f => <article key={f.id}><h3>{f.title}</h3><p>{f.detail}</p><p>{f.fix}</p></article>)}{scan.status === 'complete' && !scan.findings?.length && <p>No issues found for the selected checks.</p>}</section>}
-      <section><h2>Scan history</h2>{history.length ? history.filter(s => s.siteId === siteId).map(s => <button className="audit-history" key={s.id} onClick={() => api('/scans/' + s.id).then(data => setScan(data.scan)).catch(e => setError(e.message))}><span>{new Date(s.createdAt).toLocaleString()}</span><span>{s.status} · {s.issues || 0} issues</span></button>) : <p>No audits yet.</p>}</section>
-    </>}
-  </main>;
+
+type Finding = {id:string; ruleId:string; status:string; severity:string; source:string; title:string; detail:string; fix:string; collection?:string; collectionId?:string; item?:string; itemId?:string; field?:string; fieldName?:string; page?:string; pageId?:string; locale?:string; url?:string; resourceUrl?:string; observed?:string; expected?:string; isDraft?:boolean; affectedUrls?:string[]; environment?:string};
+type PageResult = {pageId?:string; name:string; status:string; issues?:number; detail:string; url?:string};
+type Scan = {id:string; siteId:string; siteName?:string; environment?:string; status:string; createdAt:string; issues?:number; warnings?:number; unverified?:number; error?:string; partial?:boolean; checks?:string[]; findings?:Finding[]; pageResults?:PageResult[]; publishedResults?:PageResult[]; progress?:{phase?:string; items?:number; pages?:number; checked?:number; skipped?:number; unverified?:number}; coverage?:{requested:number; checked:number; skipped:number; unverified:number; requests:number; limited:boolean}};
+type Site = {id:string; displayName?:string; name?:string; customDomains?:{url:string}[]};
+type Item = {id:string; name:string; isDraft?:boolean; locale?:string};
+type Collection = {id:string; displayName:string; fields?:{slug:string; displayName:string; isRequired?:boolean; type?:string}[]; items?:Item[]};
+type Page = {id:string; name:string; draft?:boolean; collectionId?:string; locale?:string};
+const checkOptions = [{id:'Published SEO',name:'Published titles and descriptions'}, {id:'Internal links',name:'Internal links'}, {id:'Download links',name:'Downloads'}, {id:'Image loading',name:'Image loading'}, {id:'Image alt text',name:'Image alternative text'}, {id:'Headings',name:'Heading structure'}, {id:'Indexing policy',name:'Environment indexing policy'}, {id:'CMS assets',name:'Saved CMS image, file and link URLs'}, {id:'SEO metadata',name:'Saved page SEO settings'}, {id:'Contact details',name:'Configured contact details'}, {id:'Rendered DOM',name:'Browser-rendered metadata, images and headings'}];
+const toggle = (values:string[], key:string) => values.includes(key) ? values.filter(value=>value!==key) : [...values,key];
+const active = (scan:Scan|null) => !!scan && ['queued','running'].includes(scan.status);
+function download(name:string, text:string, type:string) {const url=URL.createObjectURL(new Blob([text],{type})); const link=document.createElement('a'); link.href=url; link.download=name; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);}
+export function AuditApp({designerSite, apiBase='', navigatePage}: {designerSite?:{siteId:string;siteName:string};apiBase?:string;navigatePage?:(id:string)=>Promise<void>}) {
+ const [sites,setSites]=useState<Site[]>([]),[siteId,setSiteId]=useState('');
+ const [collections,setCollections]=useState<Collection[]>([]),[pages,setPages]=useState<Page[]>([]);
+ const [rules,setRules]=useState<string[]>([]),[chosen,setChosen]=useState(['Published SEO','Internal links','Download links','Image loading']);
+ const [pageIds,setPageIds]=useState<string[]>([]),[collectionIds,setCollectionIds]=useState<string[]>([]),[itemIds,setItemIds]=useState<string[]>([]);
+ const [scopeMode,setScopeMode]=useState('All content'),[environment,setEnvironment]=useState('Staging');
+ const [contacts,setContacts]=useState(''),[stagingNoindex,setStagingNoindex]=useState(true);
+ const [history,setHistory]=useState<Scan[]>([]),[scan,setScan]=useState<Scan|null>(null),[selected,setSelected]=useState<Finding|null>(null);
+ const [view,setView]=useState('setup'),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const [connected,setConnected]=useState(false),[busy,setBusy]=useState(false),[inventoryLoading,setInventoryLoading]=useState(false),[local,setLocal]=useState(false),[shared,setShared]=useState(false);
+ const [query,setQuery]=useState(''),[source,setSource]=useState('All sources'),[severity,setSeverity]=useState('All severities'),[status,setStatus]=useState('All statuses'),[collectionFilter,setCollectionFilter]=useState('All collections'),[locale,setLocale]=useState('All locales'),[resultPage,setResultPage]=useState(1);
+ const [grouped,setGrouped]=useState(true),[previous,setPrevious]=useState<Scan|null>(null);
+ const authWindow=useRef<Window|null>(null),detailsClose=useRef<HTMLButtonElement|null>(null);
+ const sessionKey='launchguard-session:'+apiBase;
+ const [extensionSession,setExtensionSession]=useState(()=>designerSite?sessionStorage.getItem(sessionKey)||'':'');
+ const reportId=new URLSearchParams(window.location.search).get('report');
+ const api=async(path:string,body?:unknown)=>{
+  const response=await fetch(apiBase+'/api'+path,{credentials:designerSite?'omit':'include',headers:{...(extensionSession?{Authorization:'Bearer '+extensionSession}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{})},...(body!==undefined?{method:'POST',body:JSON.stringify(body)}:{})});
+  const data=await response.json();
+  if(response.status===401){setConnected(false);if(designerSite){sessionStorage.removeItem(sessionKey);setExtensionSession('');}}
+  if(!response.ok)throw Error(data.error||'Request failed'); return data;
+ };
+ const refresh=async()=>{try{setError('');const data=await api('/sites');setSites(data.sites);setConnected(true);setSiteId(current=>designerSite?.siteId||current||data.sites[0]?.id||'');setHistory((await api('/scans')).scans);setLocal((await api('/session')).local);
+ if(reportId){const report=await api('/reports/'+encodeURIComponent(reportId));setScan(report.scan);setShared(true);setView('results');}
+ }catch(error){setError((error as Error).message);}};
+ useEffect(()=>{void refresh();},[designerSite?.siteId,extensionSession]);
+ useEffect(()=>{
+  if(!designerSite||!apiBase)return;
+  const listener=(event:MessageEvent)=>{if(event.origin!==new URL(apiBase).origin||event.source!==authWindow.current||event.data?.type!=='launchguard-connected'||!/^[a-f0-9]{64}$/.test(event.data.session||''))return;sessionStorage.setItem(sessionKey,event.data.session);setExtensionSession(event.data.session);authWindow.current=null;};
+  window.addEventListener('message',listener);return()=>window.removeEventListener('message',listener);
+ },[apiBase,designerSite?.siteId]);
+ useEffect(()=>{
+  if(!siteId||!connected)return;let keep=true;setInventoryLoading(true);setPageIds([]);setCollectionIds([]);setItemIds([]);if(!reportId)setScan(null);
+  api('/inventory?siteId='+encodeURIComponent(siteId)).then(data=>{if(!keep)return;setPages(data.pages);setCollections(data.collections);setRules(data.collections.flatMap((collection:Collection)=>(collection.fields||[]).filter(field=>field.isRequired).map(field=>collection.id+':'+field.slug)));}).catch(error=>{if(keep)setError(error.message);}).finally(()=>{if(keep)setInventoryLoading(false);});
+  return()=>{keep=false;};
+ },[siteId,connected,extensionSession]);
+ useEffect(()=>{
+  if(!active(scan))return;let keep=true;
+  const timer=setInterval(()=>{api('/scans/'+scan!.id).then(data=>{if(keep){setScan(data.scan);if(!active(data.scan))api('/scans').then(data=>setHistory(data.scans)).catch(error=>setError(error.message));}}).catch(error=>{if(keep)setError(error.message);});},1500);
+  return()=>{keep=false;clearInterval(timer);};
+ },[scan?.id,scan?.status,extensionSession]);
+ useEffect(()=>{setResultPage(1);},[query,source,severity,status,collectionFilter,locale,grouped,scan?.id]);
+ useEffect(()=>{if(!selected)return;const previousFocus=document.activeElement as HTMLElement|null;detailsClose.current?.focus();const close=(event:KeyboardEvent)=>{if(event.key==='Escape')setSelected(null);if(event.key==='Tab'){const dialog=document.querySelector('[role="dialog"]');const controls=Array.from(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input,select,textarea')||[]);const first=controls[0],last=controls[controls.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}};window.addEventListener('keydown',close);return()=>{window.removeEventListener('keydown',close);if(previousFocus?.isConnected)previousFocus.focus();};},[selected]);
+ const connect=()=>{setError('');authWindow.current=window.open(apiBase+'/auth/start?client_origin='+encodeURIComponent(window.location.origin),'launchguard-oauth','popup,width=650,height=750');if(!authWindow.current)setError('Allow popups, then connect again.');};
+ const run=async(recheck?:Finding)=>{setBusy(true);setError('');setNotice('');try{
+ const body=recheck&&scan?{recheckScanId:scan.id,findingId:recheck.id}: {siteId,environment,checks:chosen,rules:rules.map(key=>{const [collectionId,fieldSlug]=key.split(':');return{collectionId,fieldSlug,required:true};}),scope:scopeMode==='Selected content'?{pageIds,collectionIds,itemIds,skipCMS:!collectionIds.length,skipPages:!pageIds.length}: {},policy:{stagingNoindex,contacts:contacts.split('\n').map(value=>value.trim()).filter(Boolean)}};
+ const result=await api('/scans',body);setPrevious(null);setScan((await api('/scans/'+result.id)).scan);setShared(false);setView('results');setSelected(null);
+ }catch(error){setError((error as Error).message);}finally{setBusy(false);}};
+ const openScan=async(id:string)=>{try{setError('');setScan((await api('/scans/'+id)).scan);setShared(false);setPrevious(null);setView('results');}catch(error){setError((error as Error).message);}};
+ const recheckScope=async()=>{if(!scan)return;setBusy(true);try{const result=await api('/scans',{recheckScanId:scan.id});setPrevious(scan);setScan((await api('/scans/'+result.id)).scan);setView('results');}catch(error){setError((error as Error).message);}finally{setBusy(false);}};
+ const share=async(revoke=false)=>{if(!scan)return;try{const result=await api('/scans/'+scan.id+'/share',{revoke,days:7});if(revoke)setNotice('Report links revoked.');else{await navigator.clipboard.writeText(result.url);setNotice('Report link copied. It expires in 7 days and requires Webflow access to this site.');}}catch(error){setError((error as Error).message);}};
+ const findings=scan?.findings||[];
+ const visible=findings.filter(f=>([f.title,f.detail,f.page,f.collection,f.item,f.field,f.fieldName,f.url].join(' ').toLowerCase().includes(query.toLowerCase()))&&(source==='All sources'||f.source===source)&&(severity==='All severities'||f.severity===severity)&&(status==='All statuses'||f.status===status)&&(collectionFilter==='All collections'||f.collection===collectionFilter)&&(locale==='All locales'||f.locale===locale));
+ const groups=new Map<string,{finding:Finding;count:number}>();
+ for(const finding of visible){const key=grouped&&finding.resourceUrl?[finding.ruleId,finding.resourceUrl,finding.status].join('|'):finding.id;const group=groups.get(key);if(group)group.count++;else groups.set(key,{finding,count:1});}
+ const rows=[...groups.values()],totalPages=Math.max(1,Math.ceil(rows.length/20)),currentPage=Math.min(resultPage,totalPages);
+ const issueCount=findings.filter(f=>f.status==='Issue').length,warningCount=findings.filter(f=>f.status==='Warning').length,unverifiedCount=findings.filter(f=>f.status==='Could not verify').length;
+ const resolved=scan?.status==='complete'&&!scan.partial?previous?.findings?.filter(old=>!findings.some(f=>f.id===old.id)).length||0:0;
+ const exportReport=(format:string)=>{if(!scan)return;const {findings:allFindings,...summary}=scan;if(format==='json')download('launchguard-'+scan.id+'.json',JSON.stringify({report:summary,findings:allFindings},null,2),'application/json');else{const quote=(value:unknown)=>{let text=String(value??'');if(/^[=+@\-\t\r]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};const records=[['Status','Severity','Source','Page','Collection','Item','Field','Issue','Evidence','Fix','URL'],...findings.map(f=>[f.status,f.severity,f.source,f.page,f.collection,f.item,f.field,f.title,f.detail,f.fix,f.url||f.resourceUrl])];download('launchguard-'+scan.id+'.csv',records.map(row=>row.map(quote).join(',')).join('\r\n'),'text/csv');}};
+ const disconnect=async()=>{try{await api('/disconnect',{});sessionStorage.removeItem(sessionKey);setExtensionSession('');setConnected(false);setScan(null);setHistory([]);setSites([]);}catch(error){setError((error as Error).message);}};
+ return <main className="audit-app">
+ <header><div className="audit-brand"><ShieldCheck size={28}/><div><h1>LaunchGuard</h1><p>{designerSite?.siteName||sites.find(site=>site.id===siteId)?.displayName||'Website audits'}</p></div></div><div className="toolbar"><button title="Refresh connection and inventory" aria-label="Refresh" onClick={()=>void refresh()}><RefreshCw size={17}/></button>{connected&&!local&&<button title="Disconnect Webflow" aria-label="Disconnect" onClick={()=>void disconnect()}><LogOut size={17}/></button>}</div></header>
+ {error&&<p role="alert" className="audit-error">{error}</p>}{notice&&<p role="status" className="audit-notice">{notice}</p>}
+ {!connected?<section className="connection"><ShieldCheck size={40}/><h2>Connect Webflow</h2>{designerSite?<button className="audit-action" onClick={connect}>Connect Webflow</button>:<a className="audit-action" href={'/auth/start'+(reportId?'?return_to='+encodeURIComponent('/?report='+reportId):'')}>Connect Webflow</a>}</section>:<>
+ <nav className="tabs" aria-label="Audit views">{['setup','results','history'].map(tab=><button key={tab} aria-current={view===tab?'page':undefined} onClick={()=>setView(tab)}>{tab==='setup'?'New audit':tab==='results'?'Results':'History'}</button>)}</nav>
+ {view==='setup'&&<section><div className="section-heading"><h2>Audit setup</h2><span className="muted">{local?'Local token':'OAuth connected'}</span></div>
+ <div className="setup-grid"><label>Website<select value={siteId} disabled={!!designerSite||inventoryLoading} onChange={event=>setSiteId(event.target.value)}>{sites.map(site=><option key={site.id} value={site.id}>{site.displayName||site.name||site.id}</option>)}</select></label><label>Environment<select value={environment} onChange={event=>setEnvironment(event.target.value)}><option>Staging</option><option>Live</option></select></label></div>
+ {environment==='Live'&&!sites.find(site=>site.id===siteId)?.customDomains?.length&&<p className="audit-notice">No live custom domain is available. Published checks will be marked unverified. Staging checks use the Webflow publishing domain.</p>}
+ <h3>Checks</h3><div className="check-grid">{checkOptions.map(check=><label key={check.id} className="audit-check"><input type="checkbox" checked={chosen.includes(check.id)} onChange={()=>setChosen(toggle(chosen,check.id))}/>{check.name}</label>)}</div>
+ {chosen.includes('Indexing policy')&&<label className="audit-check"><input type="checkbox" checked={stagingNoindex} onChange={event=>setStagingNoindex(event.target.checked)}/>Expect staging pages to be noindex</label>}
+ {chosen.includes('Contact details')&&<label>Contact text expected on selected pages<textarea value={contacts} onChange={event=>setContacts(event.target.value)} rows={3}/></label>}
+ <h3>Content scope</h3><select aria-label="Content scope" value={scopeMode} onChange={event=>setScopeMode(event.target.value)}><option>All content</option><option>Selected content</option></select>
+ {inventoryLoading?<p role="status">Loading pages, collections and CMS items...</p>:scopeMode==='Selected content'&&<div className="scope-grid"><fieldset><legend>Pages</legend>{pages.map(page=><label className="audit-check" key={page.id}><input type="checkbox" checked={pageIds.includes(page.id)} onChange={()=>setPageIds(toggle(pageIds,page.id))}/>{page.name}{page.draft?' (Draft)':''}</label>)}</fieldset><fieldset><legend>Collections and items</legend>{collections.map(collection=><details key={collection.id}><summary><label><input type="checkbox" checked={collectionIds.includes(collection.id)} onChange={()=>setCollectionIds(toggle(collectionIds,collection.id))}/>{collection.displayName}</label></summary>{collection.items?.map(item=><label className="audit-check" key={item.id}><input type="checkbox" checked={itemIds.includes(item.id)} onChange={()=>{setItemIds(toggle(itemIds,item.id));if(!collectionIds.includes(collection.id))setCollectionIds([...collectionIds,collection.id]);}}/>{item.name}{item.isDraft?' (Draft)':''}</label>)}</details>)}</fieldset></div>}
+ <h3>CMS fields to check for missing content</h3>{collections.filter(collection=>scopeMode==='All content'||collectionIds.includes(collection.id)).map(collection=><details key={collection.id} open><summary>{collection.displayName}</summary><div className="check-grid">{collection.fields?.map(field=><label className="audit-check" key={field.slug}><input type="checkbox" checked={rules.includes(collection.id+':'+field.slug)} onChange={()=>setRules(toggle(rules,collection.id+':'+field.slug))}/>{field.displayName||field.slug}</label>)}</div></details>)}
+ <div className="section-heading"><span className="muted">{pages.length} pages · {collections.length} collections · {collections.reduce((sum,collection)=>sum+(collection.items?.length||0),0)} CMS items</span><button className="audit-action" disabled={busy||active(scan)||inventoryLoading||!siteId||(!chosen.length&&!rules.length)||(scopeMode==='Selected content'&&!pageIds.length&&!collectionIds.length)} onClick={()=>void run()}><Play size={16}/>{busy?'Starting...':'Run audit'}</button></div></section>}
+ {view==='results'&&(!scan?<section className="empty"><ShieldCheck size={36}/><h2>No audit selected</h2><button onClick={()=>setView('setup')}>New audit</button></section>:<section>
+ <div className="section-heading"><div><h2>{scan.siteName||'Audit results'}</h2><p className="muted">{scan.environment||'Staging'} · {new Date(scan.createdAt).toLocaleString()} · {scan.status}</p></div><div className="toolbar"><button title="Export CSV" aria-label="Export CSV" onClick={()=>exportReport('csv')}><Download size={16}/>CSV</button><button title="Export JSON" aria-label="Export JSON" onClick={()=>exportReport('json')}><Download size={16}/>JSON</button>{!shared&&!active(scan)&&<button title="Recheck this audit scope" onClick={()=>void recheckScope()} disabled={busy}><RotateCcw size={16}/>Recheck</button>}</div></div>
+ {active(scan)&&<div role="status" className="audit-notice"><Clock3 size={18}/><span>{scan.progress?.phase||'Queued'} · {scan.progress?.items||0} CMS items · {scan.progress?.pages||0} page settings · {scan.coverage?.checked||0} published pages</span><button onClick={()=>api('/scans/'+scan.id+'/cancel',{}).catch(error=>setError(error.message))}>Cancel</button></div>}
+ {scan.error&&<p role="alert" className="audit-error">{scan.error}</p>}{scan.partial&&<p role="status" className="audit-notice">Partial coverage. Review skipped and unverified targets before treating this report as complete.</p>}
+ <div className="stats"><div><strong>{issueCount}</strong><span>Issues</span></div><div><strong>{warningCount}</strong><span>Warnings</span></div><div><strong>{unverifiedCount}</strong><span>Unverified</span></div><div><strong>{scan.coverage?.checked||0}</strong><span>Published pages checked</span></div></div>
+ {previous&&!active(scan)&&<p role="status">{resolved} previous findings no longer appear in this recheck.</p>}
+ {!active(scan)&&scan.status==='complete'&&!findings.length&&!scan.partial&&<p role="status" className="audit-success"><CheckCircle2 size={18}/>All selected checks passed for the completed scope.</p>}
+ <details><summary>Coverage and enabled checks</summary><p>{scan.checks?.join(' · ')||'Saved CMS fields'}</p><p>Saved checks: {scan.progress?.checked||0}. Skipped: {scan.progress?.skipped||0}. Published pages requested: {scan.coverage?.requested||0}; checked: {scan.coverage?.checked||0}; skipped: {scan.coverage?.skipped||0}; unverified: {scan.coverage?.unverified||0}.</p>{[...(scan.pageResults||[]),...(scan.publishedResults||[])].map((page,index)=><div className="coverage-row" key={String(page.pageId||page.url)+index}><span>{page.name}</span><span className={'status '+page.status.toLowerCase().replace(/ /g,'-')}>{page.status}</span><small>{page.detail}</small></div>)}</details>
+ <div className="filters"><label className="search"><Search size={17}/><input aria-label="Search findings" placeholder="Search pages, collections, items, fields..." value={query} onChange={event=>setQuery(event.target.value)}/></label>{[[source,setSource,['All sources','CMS','Page','Asset']],[severity,setSeverity,['All severities','High','Medium','Low']],[status,setStatus,['All statuses','Issue','Warning','Could not verify']],[collectionFilter,setCollectionFilter,['All collections',...new Set(findings.map(f=>f.collection).filter(Boolean))]],[locale,setLocale,['All locales',...new Set(findings.map(f=>f.locale).filter(Boolean))]]] .map(([value,setter,options],index)=><select key={index} aria-label={['Source','Severity','Status','Collection','Locale'][index]} value={value as string} onChange={event=>(setter as (value:string)=>void)(event.target.value)}>{(options as string[]).map(option=><option key={option}>{option}</option>)}</select>)}</div>
+ <div className="section-heading"><span>{visible.length} matching findings</span><label className="audit-check"><input type="checkbox" checked={grouped} onChange={event=>setGrouped(event.target.checked)}/>Group repeated resource issues</label></div>
+ <div className="finding-list">{rows.slice((currentPage-1)*20,currentPage*20).map(({finding,count})=><button className="finding-row" key={finding.id} onClick={()=>setSelected(finding)}><AlertTriangle size={18}/><span><strong>{finding.title}</strong><small>{[finding.collection,finding.item,finding.page,finding.fieldName||finding.field].filter(Boolean).join(' / ')||finding.url||finding.source}{count>1?' · '+count+' affected locations':''}</small></span><span className="status">{finding.status}</span><span className="severity">{finding.severity}</span></button>)}</div>
+ {!rows.length&&<p className="empty">No findings match these filters.</p>}
+ <div className="section-heading"><button disabled={currentPage===1} onClick={()=>setResultPage(currentPage-1)}>Previous</button><span>{currentPage} / {totalPages}</span><button disabled={currentPage===totalPages} onClick={()=>setResultPage(currentPage+1)}>Next</button></div>
+ {!shared&&!active(scan)&&<div className="toolbar"><button onClick={()=>void share()}><Link2 size={16}/>Copy report link</button><button onClick={()=>void share(true)}>Revoke report links</button></div>}
+ </section>)}
+ {view==='history'&&<section><h2>Scan history</h2>{history.filter(item=>item.siteId===siteId).length?history.filter(item=>item.siteId===siteId).map(item=><button className="audit-history" key={item.id} onClick={()=>void openScan(item.id)}><span>{new Date(item.createdAt).toLocaleString()} · {item.environment}</span><span>{item.status} · {item.issues||0} issues · {item.unverified||0} unverified</span></button>):<p className="empty">No saved audits for this site.</p>}</section>}
+ </>}
+ {selected&&<div className="overlay" onClick={()=>setSelected(null)}><section className="issue-dialog" role="dialog" aria-modal="true" aria-label="Issue details" onClick={event=>event.stopPropagation()}><div className="section-heading"><h2>Issue details</h2><button ref={detailsClose} title="Close issue details" aria-label="Close issue details" onClick={()=>setSelected(null)}><X size={18}/></button></div><span className="status">{selected.status} · {selected.severity}</span><h3>{selected.title}</h3><dl>{[['Source',selected.source],['Page',selected.page],['Collection',selected.collection],['Item',selected.item],['Field',selected.fieldName||selected.field],['Locale',selected.locale],['Environment',selected.environment||scan?.environment],['Current value',selected.observed],['Expected',selected.expected],['URL',selected.url||selected.resourceUrl]].filter(([,value])=>value).map(([key,value])=><React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl><h3>Evidence</h3><p>{selected.detail}</p><h3>How to fix</h3><p>{selected.fix}</p><div className="toolbar">{selected.item&&<button onClick={()=>navigator.clipboard.writeText(selected.item!).catch(error=>setError(error.message))}><Copy size={16}/>Copy item name</button>}{selected.url&&<a href={selected.url} target="_blank" rel="noreferrer"><ExternalLink size={16}/>Published page</a>}{navigatePage&&selected.pageId&&<button onClick={()=>navigatePage(selected.pageId!).catch(error=>setError(error.message))}>Open page in Designer</button>}{!shared&&<button disabled={busy||active(scan)} onClick={()=>void run(selected)}><RotateCcw size={16}/>Recheck target</button>}</div></section></div>}
+ </main>;
 }

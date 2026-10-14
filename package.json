@@ -10,12 +10,17 @@
   "scripts": {
     "dev": "npm --prefix apps/designer run dev",
     "test": "node --test packages/checks/src/*.test.js tests/*.test.mjs",
+    "test:e2e": "playwright test",
     "check": "npm run test",
+    "lint": "eslint apps/api/src packages/ui apps/webflow-extension/src",
     "build": "npm --prefix apps/designer run build",
     "start": "node apps/api/src/server.js",
     "api": "node --env-file-if-exists=.env apps/api/src/server.js"
   },
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.22.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
   }
 }

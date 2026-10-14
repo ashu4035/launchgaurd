@@ -40,6 +40,11 @@ test('hosted dashboard and OAuth validate browser state, session isolation, repl
     assert.equal(success.status, 302); assert.equal(success.headers.get('location'), base);
     const session = success.headers.getSetCookie().find(value => value.startsWith('lg_session=')).split(';')[0];
     assert.equal((await request('/api/sites', session)).status, 200);
+    const started=await fetch(base+'/api/scans',{method:'POST',headers:{Cookie:session,'Content-Type':'application/json'},body:JSON.stringify({siteId:'site-one',checks:['SEO metadata'],rules:[]})});
+    const scanId=(await started.json()).id;
+    let scan;
+    for(let attempt=0;attempt<40;attempt++){scan=(await (await request('/api/scans/'+scanId,session)).json()).scan;if(['complete','partial','failed'].includes(scan.status))break;await new Promise(done=>setTimeout(done,20));}
+    assert.equal(scan.status,'complete');assert.equal(scan.sessionId,undefined);
     assert.equal((await request('/auth/callback?code=test&state=' + state, cookie)).status, 400);
     assert.equal((await request('/auth/start?client_origin=https://untrusted.example')).status, 400);
     const popup = await request('/auth/start?client_origin=http://localhost:1337');
@@ -52,6 +57,15 @@ test('hosted dashboard and OAuth validate browser state, session isolation, repl
     const sid = complete.headers.getSetCookie().find(value => value.startsWith('lg_session=')).split(';')[0].split('=')[1];
     const authorized = await fetch(base + '/api/sites', {headers: {Authorization: 'Bearer ' + sid, Origin: 'http://localhost:1337'}});
     assert.equal(authorized.status, 200);
+    assert.equal((await fetch(base+'/api/scans/'+scanId,{headers:{Authorization:'Bearer '+sid}})).status,404);
+    const shareResponse=await fetch(base+'/api/scans/'+scanId+'/share',{method:'POST',headers:{Cookie:session,'Content-Type':'application/json'},body:JSON.stringify({days:1})});
+    assert.equal(shareResponse.status,201);
+    const share=await shareResponse.json();const reportId=new URL(share.url).searchParams.get('report');
+    assert.equal((await request('/api/reports/'+reportId)).status,401);
+    const report=await fetch(base+'/api/reports/'+reportId,{headers:{Authorization:'Bearer '+sid}});
+    assert.equal(report.status,200);const shared=await report.json();assert.equal(shared.scan.sessionId,undefined);assert.equal(shared.scan.policy,undefined);
+    await fetch(base+'/api/scans/'+scanId+'/share',{method:'POST',headers:{Cookie:session,'Content-Type':'application/json'},body:JSON.stringify({revoke:true})});
+    assert.equal((await request('/api/reports/'+reportId,session)).status,404);
     const logout = await fetch(base + '/api/disconnect', {method: 'POST', headers: {Authorization: 'Bearer ' + sid, Origin: 'http://localhost:1337'}});
     assert.equal(logout.status, 200);
     assert.equal((await fetch(base + '/api/sites', {headers: {Authorization: 'Bearer ' + sid}})).status, 401);
