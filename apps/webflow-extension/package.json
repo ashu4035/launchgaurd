@@ -4,7 +4,8 @@
   "scripts": {
     "serve": "node serve.cjs",
     "dev": "npm install && concurrently \"webflow extension serve\" \"npm run watch-webpack\"",
-    "build": "npm run build-webpack && webflow extension bundle",
+    "build": "npm run build-webpack && npm run bundle",
+    "bundle": "node serve.cjs bundle",
     "watch-webpack": "node ../../node_modules/webpack/bin/webpack.js --config webpack.config.mjs --mode development --watch",
     "build-webpack": "node ../../node_modules/webpack/bin/webpack.js --config webpack.config.mjs --mode production",
     "lint": "eslint ."

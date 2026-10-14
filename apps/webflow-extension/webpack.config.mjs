@@ -1,15 +1,17 @@
 import path from "path";
 import { fileURLToPath } from "url";
+import webpack from 'webpack';
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
-export default {
+export default (_env, argv) => ({
   entry: "./src/index.tsx",
   output: {
     filename: "bundle.js",
     path: path.resolve(dirname, "public"),
   },
+  plugins: [new webpack.DefinePlugin({__LAUNCHGUARD_API__: JSON.stringify(process.env.LAUNCHGUARD_API_URL || (argv.mode === 'production' ? 'https://launchgaurd.onrender.com' : 'http://localhost:8787'))})],
   resolve: {
     extensions: [".ts", ".tsx", ".js", ".json"],
     alias: {
@@ -35,4 +37,4 @@ export default {
     compress: true,
     port: 3000,
   },
-};
+});

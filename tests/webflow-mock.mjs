@@ -2,6 +2,7 @@
 globalThis.fetch = async input => {
   const path = new URL(input).pathname;
   const data = {
+    '/oauth/access_token': {access_token: 'mock-webflow-token'},
     '/v2/sites': {sites: [{id: 'site-one', displayName: 'Test site'}]},
     '/v2/sites/site-one/collections': {collections: [{id: 'collection-one', displayName: 'Services'}]},
     '/v2/collections/collection-one': {id: 'collection-one', displayName: 'Services', fields: [{slug: 'summary', displayName: 'Summary', isRequired: true}]},

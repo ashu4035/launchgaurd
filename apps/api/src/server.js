@@ -1,25 +1,32 @@
 import http from 'node:http';
-import {randomBytes,randomUUID,createHash,timingSafeEqual} from 'node:crypto';
-import {readFile,writeFile,mkdir} from 'node:fs/promises';
-import {resolve,dirname} from 'node:path';
-import {checkRequiredField,classifyHttpResult} from '../../../packages/checks/src/rules.js';
+import {randomBytes,randomUUID,createHash} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
+import {resolve,sep,extname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {openStorage} from './storage.js';
+import {checkRequiredField} from '../../../packages/checks/src/rules.js';
 const PORT=Number(process.env.PORT||8787), DB=resolve(process.env.LAUNCHGUARD_DB||'./data/launchguard.json');
-const CLIENT_ID=process.env.WEBFLOW_CLIENT_ID,CLIENT_SECRET=process.env.WEBFLOW_CLIENT_SECRET,BASE=process.env.PUBLIC_BASE_URL||`http://localhost:${PORT}`;
-let db={sessions:{},scans:{},states:{}};try{db=JSON.parse(await readFile(DB,'utf8'));}catch{}
+const production=process.env.NODE_ENV==='production';
+const CLIENT_ID=process.env.WEBFLOW_CLIENT_ID,CLIENT_SECRET=process.env.WEBFLOW_CLIENT_SECRET,BASE=(process.env.PUBLIC_BASE_URL||process.env.RENDER_EXTERNAL_URL||`http://localhost:${PORT}`).replace(/\/$/,'');
+const storage=await openStorage({file:DB,databaseUrl:process.env.DATABASE_URL,encryptionKey:process.env.TOKEN_ENCRYPTION_KEY,production});
+let db=storage.data;
+const frontend=production?BASE:(process.env.FRONTEND_ORIGIN||'http://localhost:5173');
+const publicDir=fileURLToPath(new URL('../../designer/dist/',import.meta.url));
 let saving=Promise.resolve();
-const persist=()=>{saving=saving.catch(()=>{}).then(async()=>{await mkdir(dirname(DB),{recursive:true});const sessions=Object.fromEntries(Object.entries(db.sessions).filter(([id])=>id!=='local-development'));await writeFile(DB+'.tmp',JSON.stringify({...db,sessions}));await (await import('node:fs/promises')).rename(DB+'.tmp',DB)});return saving};
-const origins=new Set((process.env.ALLOWED_ORIGINS||'http://localhost:5173,http://localhost:5174,http://localhost:1337').split(',').concat(process.env.FRONTEND_ORIGIN||'http://localhost:5173'));
+const persist=()=>{saving=saving.catch(()=>{}).then(async()=>{const sessions=Object.fromEntries(Object.entries(db.sessions).filter(([id])=>id!=='local-development'));await storage.save({...db,sessions})});return saving};
+const origins=new Set((process.env.ALLOWED_ORIGINS||(production?'':'http://localhost:5173,http://localhost:5174,http://localhost:1337')).split(',').map(x=>x.trim()).filter(Boolean).concat(new URL(BASE).origin,new URL(frontend).origin));
 const json=(res,code,obj)=>{res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store',...(res.allowedOrigin?{'Access-Control-Allow-Origin':res.allowedOrigin,'Vary':'Origin'}:{}),'Access-Control-Allow-Credentials':'true','Access-Control-Allow-Headers':'Content-Type,Authorization','Access-Control-Allow-Methods':'GET,POST,OPTIONS'});res.end(JSON.stringify(obj))};
 const readBody=async(req)=>{let s='';for await(const part of req){s+=part;if(s.length>100000)throw Error('Body too large')}return JSON.parse(s||'{}')};
 const api=async(path,token)=>{const r=await fetch('https://api.webflow.com/v2'+path,{headers:{Authorization:`Bearer ${token}`,'accept-version':'2.0.0'}});if(!r.ok)throw Error(`Webflow API ${r.status} for ${path}`);return r.json()};
 const all=async(path,key,token)=>{let offset=0,out=[];while(true){const join=path.includes('?')?'&':'?';const result=await api(`${path}${join}limit=100&offset=${offset}`,token);const rows=result[key]||[];out.push(...rows);if(rows.length<100||out.length>=10000)break;offset+=rows.length;}return out};
 const cookies=req=>Object.fromEntries((req.headers.cookie||'').split(';').map(v=>v.trim().split('=').map(decodeURIComponent)).filter(x=>x.length===2));
 const localToken=process.env.NODE_ENV!=='production'&&process.env.WEBFLOW_SITE_API_TOKEN;
-const sessionId=req=>localToken?'local-development':cookies(req).lg_session;
+const sessionId=req=>localToken?'local-development':(req.headers.authorization?.match(/^Bearer ([a-f0-9]{64})$/)?.[1]||cookies(req).lg_session);
 delete db.sessions['local-development'];
 if(localToken)db.sessions['local-development']={token:localToken,created:Date.now()};
-const auth=req=>db.sessions[sessionId(req)]||null;
+const auth=req=>{const session=db.sessions[sessionId(req)];return session&&(sessionId(req)==='local-development'||Date.now()-session.created<604800000)?session:null};
 const finding=(rule,props)=>({id:randomUUID(),ruleId:rule,status:'Issue',severity:'Medium',...props});
+if(storage.ready){let recovered=false;for(const job of Object.values(db.scans)){if(['queued','running'].includes(job.status)){job.status='failed';job.error='The server restarted during this scan. Run a new audit.';recovered=true;}}if(recovered)await persist();}
 async function scan(id){const job=db.scans[id],session=db.sessions[job.sessionId];if(!session){job.status='failed';job.error='Session expired';await persist();return}job.status='running';await persist();try{
 const sites=await all('/sites','sites',session.token);if(!sites.some(s=>s.id===job.siteId))throw Error('Site access revoked');
 const collections=await all(`/sites/${job.siteId}/collections`,'collections',session.token);job.progress={collections:collections.length,items:0,pages:0};await persist();
@@ -46,11 +53,49 @@ await persist();
 job.status=job.cancelled?'cancelled':'complete';job.finishedAt=new Date().toISOString();await persist();
 }catch(e){job.status='failed';job.error=String(e.message||e);await persist()}}
 const server=http.createServer(async(req,res)=>{try{if(req.headers.origin){if(!origins.has(req.headers.origin))return json(res,403,{error:'Origin not allowed'});res.allowedOrigin=req.headers.origin;}const url=new URL(req.url,BASE),p=url.pathname;if(req.method==='OPTIONS')return json(res,204,{});
-if(p==='/health')return json(res,200,{ok:true,version:'0.2.0'});
-if(p==='/auth/start'){if(!CLIENT_ID||!CLIENT_SECRET)return json(res,503,{error:'OAuth environment variables are not configured'});const state=randomBytes(24).toString('hex');db.states[state]={created:Date.now(),browserHash:createHash('sha256').update(state).digest('hex')};await persist();const params=new URLSearchParams({response_type:'code',client_id:CLIENT_ID,redirect_uri:BASE+'/auth/callback',state,scope:'sites:read cms:read pages:read'});res.writeHead(302,{'Set-Cookie':'lg_oauth_state='+state+'; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=600'+(BASE.startsWith('https:')?'; Secure':''),Location:'https://webflow.com/oauth/authorize?'+params});return res.end()}
-if(p==='/auth/callback'){const state=url.searchParams.get('state'),saved=db.states[state];if(!saved||Date.now()-saved.created>600000||saved.browserHash!==createHash('sha256').update(cookies(req).lg_oauth_state||'').digest('hex'))return json(res,400,{error:'Invalid OAuth state'});delete db.states[state];await persist();const code=url.searchParams.get('code');if(!code)return json(res,400,{error:'Missing code'});const response=await fetch('https://api.webflow.com/oauth/access_token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:CLIENT_ID,client_secret:CLIENT_SECRET,code,grant_type:'authorization_code',redirect_uri:BASE+'/auth/callback'})});if(!response.ok)throw Error('OAuth token exchange failed');const data=await response.json();const sid=randomBytes(32).toString('hex');db.sessions[sid]={token:data.access_token,created:Date.now()};await persist();res.writeHead(302,{'Set-Cookie':`lg_session=${sid}; HttpOnly; SameSite=Lax; Path=/; ${BASE.startsWith('https:')?'Secure; ':''}Max-Age=604800`,Location:process.env.FRONTEND_ORIGIN||'http://localhost:5173'});return res.end()}
+if(p==='/health')return json(res,200,{ok:true,version:'0.3.0',storageReady:storage.ready});
+if(req.method==='GET'&&(p==='/'||p.startsWith('/assets/'))){
+const path=resolve(publicDir,p==='/'?'index.html':'.'+p);
+if(!path.startsWith(resolve(publicDir)+sep))return json(res,404,{error:'Not found'});
+try{const content=await readFile(path);const mime={'.html':'text/html; charset=utf-8','.js':'application/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml'}[extname(path)]||'application/octet-stream';res.writeHead(200,{'Content-Type':mime,'X-Content-Type-Options':'nosniff','Cache-Control':p==='/'?'no-cache':'public, max-age=31536000, immutable'});return res.end(content)}catch{return json(res,404,{error:'Dashboard not built; run npm run build'})}
+}
+if(p==='/auth/start'&&req.method==='GET'){
+if(!storage.ready)return json(res,503,{error:'Configure DATABASE_URL and TOKEN_ENCRYPTION_KEY in Render first'});
+if(!CLIENT_ID||!CLIENT_SECRET)return json(res,503,{error:'OAuth environment variables are not configured'});
+if(production&&!BASE.startsWith('https://'))return json(res,503,{error:'PUBLIC_BASE_URL must use HTTPS'});
+const clientOrigin=url.searchParams.get('client_origin');
+if(clientOrigin&&!origins.has(clientOrigin))return json(res,400,{error:'Extension origin is not allowed'});
+const state=randomBytes(24).toString('hex');
+for(const [key,value] of Object.entries(db.states))if(Date.now()-value.created>600000)delete db.states[key];
+db.states[state]={created:Date.now(),browserHash:createHash('sha256').update(state).digest('hex'),clientOrigin};
+await persist();
+const params=new URLSearchParams({response_type:'code',client_id:CLIENT_ID,redirect_uri:BASE+'/auth/callback',state,scope:'sites:read cms:read pages:read'});
+res.writeHead(302,{'Set-Cookie':'lg_oauth_state='+state+'; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=600'+(BASE.startsWith('https:')?'; Secure':''),Location:'https://webflow.com/oauth/authorize?'+params});return res.end();
+}
+if(p==='/auth/callback'&&req.method==='GET'){
+const state=url.searchParams.get('state'),saved=db.states[state];
+if(!saved||Date.now()-saved.created>600000||saved.browserHash!==createHash('sha256').update(cookies(req).lg_oauth_state||'').digest('hex'))return json(res,400,{error:'Invalid OAuth state. Start a new connection from LaunchGuard.'});
+delete db.states[state];await persist();
+if(url.searchParams.has('error'))return json(res,400,{error:'Webflow authorization was declined. You can try connecting again.'});
+const code=url.searchParams.get('code');if(!code)return json(res,400,{error:'Missing code'});
+const response=await fetch('https://api.webflow.com/oauth/access_token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:CLIENT_ID,client_secret:CLIENT_SECRET,code,grant_type:'authorization_code',redirect_uri:BASE+'/auth/callback'})});
+if(!response.ok)throw Error('OAuth token exchange failed');
+const data=await response.json();if(typeof data.access_token!=='string')throw Error('OAuth token exchange returned no token');
+const sid=randomBytes(32).toString('hex');
+db.sessions[sid]={token:data.access_token,created:Date.now()};await persist();
+const cookie=`lg_session=${sid}; HttpOnly; SameSite=Lax; Path=/; ${BASE.startsWith('https:')?'Secure; ':''}Max-Age=604800`;
+const clear='lg_oauth_state=; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=0'+(BASE.startsWith('https:')?'; Secure':'');
+if(saved.clientOrigin){
+const nonce=randomBytes(16).toString('hex');
+const target=JSON.stringify(saved.clientOrigin).replace(/</g,'\\u003c');
+res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','Set-Cookie':[cookie,clear],'Content-Security-Policy':`default-src 'none'; script-src 'nonce-${nonce}'; base-uri 'none'; frame-ancestors 'none'`});
+return res.end(`<!doctype html><html><head><title>LaunchGuard connected</title></head><body><h1>Webflow connected</h1><p>Return to LaunchGuard in Designer.</p><script nonce="${nonce}">if(window.opener){window.opener.postMessage({type:'launchguard-connected',session:'${sid}'},${target});window.close();}</script></body></html>`);
+}
+res.writeHead(302,{'Set-Cookie':[cookie,clear],Location:frontend});return res.end();
+}
+if(p.startsWith('/api/')&&!storage.ready)return json(res,503,{error:'Persistent storage is not configured. Set DATABASE_URL and TOKEN_ENCRYPTION_KEY in Render.'});
 const session=auth(req);if(!session)return json(res,401,{error:'Connect Webflow to continue'});
-if(p==='/api/disconnect'&&req.method==='POST'){delete db.sessions[cookies(req).lg_session];await persist();res.writeHead(200,{'Set-Cookie':'lg_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax'});return res.end('{}')}
+if(p==='/api/disconnect'&&req.method==='POST'){delete db.sessions[sessionId(req)];await persist();res.setHeader('Set-Cookie','lg_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax');return json(res,200,{ok:true})}
 if(p==='/api/sites'){return json(res,200,{sites:await all('/sites','sites',session.token)})}
 if(p==='/api/collections'){const siteId=url.searchParams.get('siteId');if(!siteId)return json(res,400,{error:'siteId required'});const sites=await all('/sites','sites',session.token);if(!sites.some(s=>s.id===siteId))return json(res,403,{error:'Unauthorized site'});const collections=await all(`/sites/${siteId}/collections`,'collections',session.token);const detailed=[];for(const collection of collections)detailed.push(await api(`/collections/${collection.id}`,session.token));return json(res,200,{collections:detailed})}
 if(p==='/api/scans'&&req.method==='GET')return json(res,200,{scans:Object.values(db.scans).filter(x=>x.sessionId===sessionId(req)).map(({id,siteId,status,createdAt,progress,findings,error})=>({id,siteId,status,createdAt,progress,issues:findings.length,error}))});

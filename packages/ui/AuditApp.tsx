@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useState, useRef} from 'react';
 import './audit.css';
 type Site = {id: string; displayName?: string; name?: string};
 type Scan = {id: string; siteId: string; status: string; createdAt: string; issues?: number; error?: string; pageResults?: {pageId: string; name: string; status: 'passed' | 'issues' | 'skipped'; issues: number; detail: string}[]; findings?: {id: string; title: string; detail: string; fix: string}[]};
@@ -9,9 +9,29 @@ export function AuditApp({designerSite, apiBase = ''}: {designerSite?: {siteId: 
   const [history, setHistory] = useState<Scan[]>([]), [scan, setScan] = useState<Scan | null>(null);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [seo, setSeo] = useState(true), [query, setQuery] = useState(''), [connected, setConnected] = useState(false);
+  const authWindow = useRef<Window | null>(null);
+  const sessionKey = 'launchguard-session:' + apiBase;
+  const [extensionSession, setExtensionSession] = useState(() => designerSite ? sessionStorage.getItem(sessionKey) || '' : '');
+  useEffect(() => {
+    if (!designerSite || !apiBase) return;
+    const listener = (event: MessageEvent) => {
+      if (event.origin !== new URL(apiBase).origin || event.source !== authWindow.current || event.data?.type !== 'launchguard-connected' || !/^[a-f0-9]{64}$/.test(event.data.session || '')) return;
+      sessionStorage.setItem(sessionKey, event.data.session);
+      setExtensionSession(event.data.session);
+      authWindow.current = null;
+    };
+    window.addEventListener('message', listener);
+    return () => window.removeEventListener('message', listener);
+  }, [apiBase, designerSite?.siteId]);
+  const connect = () => {
+    setError('');
+    authWindow.current = window.open(apiBase + '/auth/start?client_origin=' + encodeURIComponent(window.location.origin), 'launchguard-oauth', 'popup,width=650,height=750');
+    if (!authWindow.current) setError('Allow popups for this site, then connect again.');
+  };
   const api = async (path: string, body?: unknown) => {
-    const response = await fetch(apiBase + '/api' + path, {credentials: 'include', ...(body !== undefined ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)} : {})});
+    const response = await fetch(apiBase + '/api' + path, {credentials: designerSite ? 'omit' : 'include', headers: {...(extensionSession ? {Authorization: 'Bearer ' + extensionSession} : {}), ...(body !== undefined ? {'Content-Type': 'application/json'} : {})}, ...(body !== undefined ? {method: 'POST', body: JSON.stringify(body)} : {})});
     const data = await response.json();
+    if (response.status === 401) {setConnected(false); setSites([]); if (designerSite) {sessionStorage.removeItem(sessionKey); setExtensionSession('');}}
     if (!response.ok) throw new Error(data.error || 'Request failed');
     return data;
   };
@@ -23,7 +43,7 @@ export function AuditApp({designerSite, apiBase = ''}: {designerSite?: {siteId: 
       setHistory((await api('/scans')).scans);
     } catch (e) {setError((e as Error).message);}
   };
-  useEffect(() => {void refresh();}, [designerSite?.siteId]);
+  useEffect(() => {void refresh();}, [designerSite?.siteId, extensionSession]);
   useEffect(() => {
     let active = true; setCollections([]); setRules([]); setScan(null);
     if (siteId) api('/collections?siteId=' + encodeURIComponent(siteId)).then(data => {
@@ -50,7 +70,7 @@ export function AuditApp({designerSite, apiBase = ''}: {designerSite?: {siteId: 
   return <main className="audit-app">
     <header><div><h1>LaunchGuard</h1><p>{designerSite ? designerSite.siteName : 'Website audits'}</p></div><button onClick={() => void refresh()}>Refresh</button></header>
     {error && <p role="alert" className="audit-error">{error}</p>}
-    {!connected ? <section><h2>Connect Webflow</h2><a className="audit-action" href={apiBase + '/auth/start'} target="_blank" rel="noreferrer">Connect Webflow</a></section> : <>
+    {!connected ? <section><h2>Connect Webflow</h2>{designerSite ? <button className="audit-action" onClick={connect}>Connect Webflow</button> : <a className="audit-action" href={apiBase + '/auth/start'}>Connect Webflow</a>}</section> : <>
       <section><h2>New audit</h2><label>Website<select value={siteId} disabled={!!designerSite} onChange={e => setSiteId(e.target.value)}><option value="">Select a site</option>{sites.map(s => <option key={s.id} value={s.id}>{s.displayName || s.name || s.id}</option>)}</select></label>
       <label className="audit-check"><input type="checkbox" checked={seo} onChange={e => setSeo(e.target.checked)}/>Page SEO settings</label>
       <h3>CMS fields to check for missing content</h3>{collections.map(c => <fieldset key={c.id}><legend>{c.displayName}</legend>{(c.fields || []).map(f => {const key = c.id + ':' + f.slug; return <label className="audit-check" key={key}><input type="checkbox" checked={rules.includes(key)} onChange={e => setRules(current => e.target.checked ? [...current, key] : current.filter(x => x !== key))}/>{f.displayName || f.slug}</label>;})}</fieldset>)}

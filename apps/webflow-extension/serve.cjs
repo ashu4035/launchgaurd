@@ -7,7 +7,8 @@ if (!existsSync(cli)) {
   console.error('Webflow CLI was not found in the Windows npm installation.');
   process.exit(1);
 }
-const child = spawn(process.execPath, [cli, 'extension', 'serve', '1337'], {
+const args = process.argv[2] === 'bundle' ? ['extension', 'bundle'] : ['extension', 'serve', '1337'];
+const child = spawn(process.execPath, [cli, ...args], {
   cwd: __dirname,
   stdio: 'inherit',
   env: {...process.env, NODE_PATH: [join(__dirname, '../../node_modules'), process.env.NODE_PATH].filter(Boolean).join(delimiter)},

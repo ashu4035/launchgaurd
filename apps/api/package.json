@@ -1,1 +1,1 @@
-{"name":"@launchguard/api","version":"0.2.0","private":true,"type":"module","scripts":{"start":"node --env-file-if-exists=../../.env src/server.js","dev":"node --env-file-if-exists=../../.env --watch src/server.js"}}
+{"name":"@launchguard/api","version":"0.2.0","private":true,"type":"module","scripts":{"start":"node --env-file-if-exists=../../.env src/server.js","dev":"node --env-file-if-exists=../../.env --watch src/server.js"},"dependencies":{"pg":"^8.23.1"}}
