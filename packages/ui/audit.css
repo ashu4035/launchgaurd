@@ -1,0 +1,22 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #f4f6f7; color: #20272b; font: 14px/1.5 system-ui, sans-serif; }
+.audit-app { max-width: 1000px; margin: auto; padding: 24px; }
+.audit-app header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #167e69; padding-bottom: 16px; gap: 12px; }
+.audit-app h1 { font-size: 26px; margin: 0; }
+.audit-app h2 { font-size: 19px; }
+.audit-app h3 { font-size: 15px; }
+.audit-app section { padding: 20px 0; border-bottom: 1px solid #d5dce0; }
+.audit-app button, .audit-action { border: 1px solid #b5c2c8; padding: 8px 14px; border-radius: 4px; background: white; color: inherit; cursor: pointer; text-decoration: none; font: inherit; }
+.audit-app .audit-action { display: inline-block; background: #167e69; color: white; border-color: #167e69; margin-top: 12px; }
+.audit-app button:disabled { opacity: .5; cursor: default; }
+.audit-app select, .audit-app input:not([type=checkbox]) { display: block; width: 100%; padding: 9px; border: 1px solid #b5c2c8; border-radius: 4px; margin: 6px 0 14px; font: inherit; }
+.audit-check { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+.audit-app fieldset { border: 1px solid #d5dce0; margin: 10px 0; }
+.audit-app article { padding: 12px 0; border-bottom: 1px solid #d5dce0; }
+.audit-history { display: flex; width: 100%; justify-content: space-between; gap: 12px; margin: 8px 0; flex-wrap: wrap; text-align: left; }
+.audit-error { color: #a22b35; background: #fff0f1; padding: 12px; }
+.audit-app small { color: #65747c; font-weight: normal; }
+.page-check.passed { border-left: 3px solid #167e69; padding-left: 12px; }
+.page-check.issues { border-left: 3px solid #b84b38; padding-left: 12px; }
+.page-check.skipped { border-left: 3px solid #7a858b; padding-left: 12px; }
+@media (max-width: 500px) { .audit-app { padding: 14px; } .audit-app header { flex-wrap: wrap; } .audit-app header > div { min-width: 0; } .audit-app h1 { font-size: 22px; overflow-wrap: anywhere; } }

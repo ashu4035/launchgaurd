@@ -1,0 +1,21 @@
+{
+  "name": "launchguard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm --prefix apps/designer run dev",
+    "test": "node --test packages/checks/src/*.test.js tests/*.test.mjs",
+    "check": "npm run test",
+    "build": "npm --prefix apps/designer run build",
+    "start": "node apps/api/src/server.js",
+    "api": "node --env-file-if-exists=.env apps/api/src/server.js"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
