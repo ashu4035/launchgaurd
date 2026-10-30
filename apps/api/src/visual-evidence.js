@@ -2,7 +2,7 @@ import {isolatedPage} from './rendered-checks.js';
 
 export function visualTarget(finding) {
   if (['image-alt','image-loading','rendered-alt','rendered-image'].includes(finding.ruleId) && finding.resourceUrl) return {kind:'image',url:finding.resourceUrl,missingAlt:['image-alt','rendered-alt'].includes(finding.ruleId)};
-  if (['internal-link','download-link'].includes(finding.ruleId) && finding.resourceUrl) return {kind:'link',url:finding.resourceUrl};
+  if (['internal-link','download-link'].includes(finding.ruleId) && finding.resourceUrl) return {kind:'link',url:finding.resourceUrl,text:finding.elementText};
   if (['heading-h1','rendered-h1'].includes(finding.ruleId)) return {kind:'heading'};
   return null;
 }
@@ -22,6 +22,7 @@ export async function captureVisualEvidence(url, findings, options = {}) {
           if(target.kind==='heading')return[index];
           const candidate=element.tagName==='IMG'?element.currentSrc||element.src:(element.tagName==='A'?element.href:'');
           if(candidate!==target.url)return[];
+          if(target.kind==='link'&&target.text&&element.textContent.trim().slice(0,120).replace(/\s+/g,' ')!==target.text.replace(/\s+/g,' '))return[];
           if(target.missingAlt&&(element.hasAttribute('alt')||element.getAttribute('role')==='presentation'||element.getAttribute('aria-hidden')==='true'))return[];
           return[index];
         }),target);

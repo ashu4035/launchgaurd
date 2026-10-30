@@ -38,4 +38,6 @@ Only the owning audit session can retrieve screenshot data through the private s
 
 ## Validation
 
+Link screenshot matching uses both the exact destination and the detected link label, so differently labeled buttons pointing to the same fragment are not confused. If both destination and label still match several elements, capture remains unavailable rather than selecting one arbitrarily. Run a new scan to obtain structured link labels; old saved findings are not modified.
+
 Backend tests exercise supported/unsupported mapping, partial capture and private/shared evidence access. Browser tests capture actual fixture images on both viewports, check that red annotation pixels exist, reject ambiguous link matches, verify HTML escaping and disabled-browser fallback, and test report layout/download at 800 and 320 pixels. Fixtures are clearly labeled; they are not live customer audits. Live screenshots on the deployed runtime and uploaded Webflow app still require verification after deployment.

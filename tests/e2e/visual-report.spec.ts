@@ -9,11 +9,12 @@ const finding:Finding={id:'visual-fixture',ruleId:'image-alt',severity:'Medium',
 const read=async(address:string)=>({verified:true,status:200,url:address,contentType:address.endsWith('.svg')?'image/svg+xml':'text/html',bytes:Buffer.from(address.endsWith('.svg')?'<svg xmlns="http://www.w3.org/2000/svg" width="170" height="54"><rect width="170" height="54" fill="#167e69"/><text x="12" y="34" fill="white" font-size="22">Fixture logo</text></svg>':'<html><head><title>Team</title></head><body style="font-family:Arial;padding:24px;background:white;color:#123"><img src="/logo.svg" width="170" height="54"><h1>Our team</h1><p>A controlled browser fixture, not a customer audit.</p><input value="Private field"><a href="/duplicate">One</a><a href="/duplicate">Two</a></body></html>')});
 
 test('captures real desktop/mobile red annotations, rejects ambiguous targets, and exports inert HTML',async({page})=>{
- const evidence=await captureVisualEvidence(url,[finding,{...finding,id:'duplicate',ruleId:'internal-link',resourceUrl:url+'duplicate'}],{enabled:true,read});
+ const evidence=await captureVisualEvidence(url,[finding,{...finding,id:'duplicate',ruleId:'internal-link',resourceUrl:url+'duplicate'},{...finding,id:'named-link',ruleId:'internal-link',resourceUrl:url+'duplicate',elementText:'One'}],{enabled:true,read});
  const captured=evidence.get(finding.id)!;
  expect(captured.status,captured.reason).toBe('Captured');expect(captured.captures).toHaveLength(2);
  expect(evidence.get('duplicate')!.captures).toHaveLength(0);
  expect(evidence.get('duplicate')!.reason).toContain('Multiple elements');
+ expect(evidence.get('named-link')!.captures).toHaveLength(2);
  finding.visualEvidence=captured;
  expect(reportArea(finding)).toBe('Accessibility');
  const html=exportVisualReport({siteName:'Fixture <script>window.injected=true</script>',environment:'Staging',status:'complete',createdAt:'2026-10-28T00:00:00Z',findings:[finding]});

@@ -129,7 +129,7 @@ export async function auditPublished({site, pages, job, emit, persist, read = sa
         let fragment; try {fragment = decodeURIComponent(link.fragment.slice(1));} catch {fragment = link.fragment.slice(1);}
         if (fragment && !inspectHtml(result.bytes.toString(), link.url).ids.has(fragment)) status = 'Issue';
       }
-      if (status !== 'Pass') emit(link.download ? 'download-link' : 'internal-link', {...context, resourceUrl: link.url + link.fragment, status, title: link.download ? 'Download could not be verified or is broken' : 'Internal link is broken or could not be verified', detail: result.error || `HTTP ${result.status}; link text: ${link.text || '(empty)'}`, fix: link.download ? 'Check the download target and expected file, then replace or remove the link.' : 'Correct the destination URL or fragment in Designer or CMS, publish and recheck.'});
+      if (status !== 'Pass') emit(link.download ? 'download-link' : 'internal-link', {...context, resourceUrl: link.url + link.fragment, elementText:link.text, status, title: link.download ? 'Download could not be verified or is broken' : 'Internal link is broken or could not be verified', detail: result.error || `HTTP ${result.status}; link text: ${link.text || '(empty)'}`, fix: link.download ? 'Check the download target and expected file, then replace or remove the link.' : 'Correct the destination URL or fragment in Designer or CMS, publish and recheck.'});
     }
     if(checks.has('Visual evidence')){
       const pageFindings=job.findings.slice(before);
