@@ -8,6 +8,11 @@ const url='https://visual-fixture.example/';
 const finding:Finding={id:'visual-fixture',ruleId:'image-alt',severity:'Medium',status:'Issue',source:'Page',page:'Team',url,resourceUrl:url+'logo.svg',title:'Image has no alt attribute',detail:'The published logo image has no alt attribute.',fix:'Add a meaningful alternative description or mark the image decorative.',environment:'Staging'};
 const read=async(address:string)=>({verified:true,status:200,url:address,contentType:address.endsWith('.svg')?'image/svg+xml':'text/html',bytes:Buffer.from(address.endsWith('.svg')?'<svg xmlns="http://www.w3.org/2000/svg" width="170" height="54"><rect width="170" height="54" fill="#167e69"/><text x="12" y="34" fill="white" font-size="22">Fixture logo</text></svg>':'<html><head><title>Team</title></head><body style="font-family:Arial;padding:24px;background:white;color:#123"><img src="/logo.svg" width="170" height="54"><h1>Our team</h1><p>A controlled browser fixture, not a customer audit.</p><input value="Private field"><a href="/duplicate">One</a><a href="/duplicate">Two</a></body></html>')});
 
+test('new audits select visual evidence by default',async({page})=>{
+ await page.goto('/');
+ await expect(page.getByRole('checkbox',{name:'Visual evidence (desktop and mobile screenshots)',exact:true})).toBeChecked();
+});
+
 test('captures real desktop/mobile red annotations, rejects ambiguous targets, and exports inert HTML',async({page})=>{
  const evidence=await captureVisualEvidence(url,[finding,{...finding,id:'duplicate',ruleId:'internal-link',resourceUrl:url+'duplicate'},{...finding,id:'named-link',ruleId:'internal-link',resourceUrl:url+'duplicate',elementText:'One'}],{enabled:true,read});
  const captured=evidence.get(finding.id)!;

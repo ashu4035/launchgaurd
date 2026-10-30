@@ -17,7 +17,7 @@ function download(name:string, text:string, type:string) {const url=URL.createOb
 export function AuditApp({designerSite, apiBase='', navigatePage, getIdToken}: {designerSite?:{siteId:string;siteName:string};apiBase?:string;navigatePage?:(id:string)=>Promise<void>;getIdToken?:()=>Promise<string>}) {
  const [sites,setSites]=useState<Site[]>([]),[siteId,setSiteId]=useState('');
  const [collections,setCollections]=useState<Collection[]>([]),[pages,setPages]=useState<Page[]>([]);
- const [rules,setRules]=useState<string[]>([]),[chosen,setChosen]=useState(['Published SEO','Internal links','Download links','Image loading']);
+ const [rules,setRules]=useState<string[]>([]),[chosen,setChosen]=useState(['Published SEO','Internal links','Download links','Image loading','Visual evidence']);
  const [pageIds,setPageIds]=useState<string[]>([]),[collectionIds,setCollectionIds]=useState<string[]>([]),[itemIds,setItemIds]=useState<string[]>([]);
  const [scopeMode,setScopeMode]=useState('All content'),[environment,setEnvironment]=useState('Staging');
  const [contacts,setContacts]=useState(''),[stagingNoindex,setStagingNoindex]=useState(true);

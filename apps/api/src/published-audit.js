@@ -24,7 +24,7 @@ function statusOf(response) {
   if (response.status >= 200 && response.status < 300) return 'Pass';
   return 'Could not verify';
 }
-export async function auditPublished({site, pages, job, emit, persist, read = safeRead}) {
+export async function auditPublished({site, pages, job, emit, persist, read = safeRead, capture = captureVisualEvidence}) {
   const checks = new Set(job.checks);
   if (!PUBLISHED_CHECKS.some(check => checks.has(check))) return;
   const domains = (site.customDomains || []).map(domain => {const value=domain.url||domain.name||'';return normalizeUrl(value.startsWith('https://')?value:'https://'+value);}).filter(Boolean);
@@ -134,14 +134,22 @@ export async function auditPublished({site, pages, job, emit, persist, read = sa
     if(checks.has('Visual evidence')){
       const pageFindings=job.findings.slice(before);
       for(const finding of pageFindings)finding.visualEvidence={status:'Unavailable',reason:visualTarget(finding)?'Screenshot capture limit reached.':'This rule has no uniquely identifiable visible element.',captures:[]};
-      const candidates=pageFindings.filter(visualTarget).slice(0,Math.max(0,4-visualFindings));
+      const groups=new Map();
+      for(const finding of pageFindings){
+        const target=visualTarget(finding);if(!target)continue;
+        const key=JSON.stringify(target);const group=groups.get(key)||[];group.push(finding);groups.set(key,group);
+      }
+      const selectedGroups=[...groups.values()].slice(0,Math.max(0,12-visualFindings));
+      const candidates=selectedGroups.map(group=>group[0]);
       if(candidates.length&&visualPages<2&&!job.cancelled){
         job.progress.phase='Visual evidence';await persist();
-        const evidence=await captureVisualEvidence(response.url||url,candidates,{read:request,cancelled:()=>job.cancelled});
-        for(const finding of candidates)finding.visualEvidence=evidence.get(finding.id);
+        const evidence=await capture(response.url||url,candidates,{read:request,cancelled:()=>job.cancelled});
+        for(const group of selectedGroups)for(const finding of group)finding.visualEvidence=evidence.get(group[0].id)||{status:'Unavailable',reason:'The browser returned no screenshot for this element.',captures:[]};
         visualPages++;visualFindings+=candidates.length;
       }
       if(pageFindings.some(f=>visualTarget(f)&&f.visualEvidence.captures.length<2))job.visualEvidencePartial=true;
+    }else{
+      for(const finding of job.findings.slice(before))if(visualTarget(finding))finding.visualEvidence={status:'Unavailable',reason:'Visual evidence was not selected for this audit. Run a new audit with Visual evidence enabled to capture the affected element.',captures:[]};
     }
     job.coverage.checked++;
     const added = job.findings.slice(before);

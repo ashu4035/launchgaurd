@@ -5,7 +5,7 @@ This update adds a Visual report mode and downloadable self-contained HTML repor
 ## Use the report
 
 1. Select the published-content rules you want to run (for example Image alternative text or Internal links).
-2. Also select **Visual evidence (desktop and mobile screenshots)**, then run the audit. Screenshots alone do not detect defects, so the API requires another published-content check too.
+2. Leave **Visual evidence (desktop and mobile screenshots)** selected (enabled by default for new audits), then run the audit. Screenshots alone do not detect defects, so the API requires another published-content check too.
 3. In Results, select the **Visual report** icon next to Compact findings. Search/filters still apply. Visual report cards show each matching finding individually, without resource grouping, 20 per page; the summary counts the full scan, not just the current filters/page.
 4. Each card includes category/severity/status, actual and expected behavior, why it matters, fix instructions, technical details, and available desktop/mobile close-up and context images. Use Enlarge screenshots to inspect them.
 5. Use **Download visual HTML report** for a complete report (all findings, not just the filtered page). Open the HTML in a browser; its print dialog can save it as PDF. There is no built-in server PDF generator in this update.
@@ -26,7 +26,7 @@ The deployment update adds an npm postbuild step: when `ENABLE_RENDERED_CHECKS=t
 
 ## Limits and storage
 
-- At most two published pages and four mapped findings per audit are selected for screenshots, with up to two viewport captures per finding.
+- At most two published pages and twelve distinct visual targets per audit are selected for screenshots, with up to two viewport captures per target. Duplicate findings for the same exact target reuse the capture result. Browser time and image-byte limits still apply, so selection does not guarantee capture.
 - Each viewport opens a clean browser, uses the existing isolated public-address-validated GET/HEAD request path, blocks service workers/WebSockets/WebRTC/POSTs/popups, caps at 40 browser requests and closes after the existing 18-second watchdog. Existing published-scan request/time policies still apply.
 - JPEG quality 55; each close-up/context pair is capped at 400 KB; total image bytes cap at 1 MB per captured page (2 MB per scan), before base64 overhead. Form inputs, textareas and editable regions are masked in screenshot output. No page interactions, submissions or authentication are performed.
 - Captures are embedded in findings inside the existing encrypted PostgreSQL snapshot, not a public image directory. No schema migration or key change is required. Snapshot/history retention is still manual; monitor memory, database growth and backups. Large-scale image history needs a separately designed private object store/retention policy rather than raising these limits blindly.
