@@ -15,4 +15,4 @@ jobs:
       - run: npm test
       - run: npm run build-webpack --workspace=LaunchGuard
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - run: npm run test:e2e -- --reporter=github,line
