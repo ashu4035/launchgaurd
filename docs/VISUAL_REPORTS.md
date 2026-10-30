@@ -8,7 +8,7 @@ This update adds a Visual report mode and downloadable self-contained HTML repor
 2. Leave **Visual evidence (desktop and mobile screenshots)** selected (enabled by default for new audits), then run the audit. Screenshots alone do not detect defects, so the API requires another published-content check too.
 3. In Results, select the **Visual report** icon next to Compact findings. Search/filters still apply. Visual report cards show each matching finding individually, without resource grouping, 20 per page; the summary counts the full scan, not just the current filters/page.
 4. Each card includes category/severity/status, actual and expected behavior, why it matters, fix instructions, technical details, and available desktop/mobile close-up and context images. Use Enlarge screenshots to inspect them.
-5. Use **Download visual HTML report** for a complete report (all findings, not just the filtered page). Open the HTML in a browser; its print dialog can save it as PDF. There is no built-in server PDF generator in this update.
+5. Use **Download visual HTML report** or **Download PDF report** for a complete report (all findings, not just the filtered page). Both embed available screenshots for offline viewing. PDF generation runs locally in the browser with jsPDF; no report or images are uploaded to a conversion service. Findings without captured evidence retain their unavailable reason. HTML exports eagerly load embedded screenshots for printing.
 
 ## What screenshots establish
 

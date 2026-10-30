@@ -2,6 +2,7 @@ import {test,expect} from '@playwright/test';
 import {writeFile} from 'node:fs/promises';
 import {captureVisualEvidence} from '../../apps/api/src/visual-evidence.js';
 import {exportVisualReport,reportArea} from '../../packages/ui/VisualReport';
+import {createPdfReport} from '../../packages/ui/PdfReport';
 import type {Finding} from '../../packages/ui/AuditApp';
 
 const url='https://visual-fixture.example/';
@@ -21,6 +22,11 @@ test('captures real desktop/mobile red annotations, rejects ambiguous targets, a
  expect(evidence.get('duplicate')!.reason).toContain('Multiple elements');
  expect(evidence.get('named-link')!.captures).toHaveLength(2);
  finding.visualEvidence=captured;
+ const pdf=createPdfReport({siteName:'Screenshot fixture',status:'complete',createdAt:'2026-10-30',findings:[finding]});
+ const pdfBytes=pdf.output();
+ expect(pdfBytes).toContain('/Subtype /Image');
+ expect(pdf.getNumberOfPages()).toBeGreaterThan(1);
+ await writeFile('test-results/visual-report-fixture.pdf',Buffer.from(pdf.output('arraybuffer')));
  expect(reportArea(finding)).toBe('Accessibility');
  const html=exportVisualReport({siteName:'Fixture <script>window.injected=true</script>',environment:'Staging',status:'complete',createdAt:'2026-10-28T00:00:00Z',findings:[finding]});
  await page.setContent(html);
@@ -55,6 +61,8 @@ for(const width of [800,320])test('visual report view and self-contained downloa
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download visual HTML report'}).click();
  expect((await download).suggestedFilename()).toMatch(/\.html$/);
+ const pdfDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Download PDF report',exact:true}).click();
+ expect((await pdfDownload).suggestedFilename()).toMatch(/\.pdf$/);
  await page.screenshot({path:'test-results/visual-report-'+width+'.png',fullPage:true});
 });
 
