@@ -1,7 +1,8 @@
 // Loaded only by the integration test's child process.
-globalThis.fetch = async input => {
+globalThis.fetch = async (input, options) => {
   if(process.env.MOCK_DELAY_MS)await new Promise(done=>setTimeout(done,Number(process.env.MOCK_DELAY_MS)));
   const path = new URL(input).pathname;
+  if(path==='/beta/token/resolve')return new Response(JSON.stringify(JSON.parse(options.body).idToken==='mock-designer-proof'?{id:'designer-one',siteId:'site-one'}:{}),{status:JSON.parse(options.body).idToken==='mock-designer-proof'?200:401});
   const data = {
     '/oauth/access_token': {access_token: 'mock-webflow-token'},
     '/v2/sites': {sites: [{id: 'site-one', displayName: 'Test site'}]},

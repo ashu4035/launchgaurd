@@ -2,6 +2,10 @@
 A Webflow auditing app with a standalone React dashboard and a Designer Extension sharing one audit interface and backend. Bulk audits cover saved CMS fields/assets and published HTML metadata, internal links, downloads, images, headings, alternative text and environment indexing policies. Scope selection, progress, search/filters, issue details, rechecks, history, CSV/JSON export and access-controlled report links are implemented. Read [feature coverage and limitations](docs/FEATURE_COVERAGE.md) and [Render setup](docs/RENDER_SETUP.md).
 
 ## Local start
+Visual issue cards and self-contained HTML reports are described in [visual reports](docs/VISUAL_REPORTS.md). Annotated screenshots require backend Chromium and the Visual evidence check; screenshots are not retroactively added to old audits.
+For ownership handover or a move to another host/database, use the [hosting and database migration runbook](docs/HOSTING_AND_DATABASE_MIGRATION.md). It covers the encryption-key backup, single-writer cutover, PostgreSQL restore, OAuth/extension URL updates, validation and rollback.
+For automatic connection when reopening the Designer Extension, see [session restoration setup](docs/SESSION_RESTORATION.md). It requires the updated backend/bundle, Authorized User: Read permission and `WEBFLOW_IDENTITY_ENABLED=true`.
+
 Use Node 22.22.2 or later. Run `npm ci`, configure `.env` using `.env.example`, and start `npm run api` plus `npm run dev`. `npm test` runs unit/integration tests; `npm run build` type-checks and builds the dashboard. `npm run build-webpack --workspace=LaunchGuard` builds the Designer Extension. `npm run test:e2e` runs Chromium workflows after `npx playwright install chromium`. For the uploaded extension, run `npm run bundle` from apps/webflow-extension and upload bundle.zip.
 
 ## Structure

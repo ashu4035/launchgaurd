@@ -16,7 +16,7 @@ const App: React.FC = () => {
     if (!page) throw new Error('This page could not be mapped in the current Designer context. Open it using the Pages panel.');
     await webflow.switchPage(page);
   };
-  return error ? <p role="alert">{error}</p> : site ? <AuditApp designerSite={site} apiBase={__LAUNCHGUARD_API__} navigatePage={navigatePage}/> : <p>Loading site...</p>;
+  return error ? <p role="alert">{error}</p> : site ? <AuditApp designerSite={site} apiBase={__LAUNCHGUARD_API__} navigatePage={navigatePage} getIdToken={()=>webflow.getIdToken()}/> : <p>Loading site...</p>;
 };
 
 const rootEl = document.getElementById("root");

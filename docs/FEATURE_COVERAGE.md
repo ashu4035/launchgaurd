@@ -2,6 +2,8 @@
 
 ## Implemented in the bulk audit release
 
+- The visual-report update adds category/severity summaries, actual/expected/impact/fix cards, self-contained HTML export, and optional annotated desktop/mobile screenshots for uniquely mapped published elements. Capture is limited to two pages/four findings per scan and requires backend Chromium. Shared links hide owner-only screenshots; see VISUAL_REPORTS.md for exact limits and deployment requirements.
+
 - Designer Extension and standalone dashboard share the audit workflow and OAuth connection.
 - Select staging or a verified live custom domain, pages, collections, CMS items and checks. Inventory includes IDs, names, field definitions, locale and draft/archive state returned by Webflow.
 - Saved CMS field rules handle empty strings, empty arrays, file/image values, rich text, zero and false. Draft items are checked as saved content. No checks read unsaved Designer changes.
@@ -24,7 +26,7 @@ CMS inventory selection supports 2,000 items, and API pagination is capped at 10
 - Lightweight checks read published HTML. Optional Rendered DOM checks run isolated Chromium for up to three pages, inspect metadata/headings and image load/alt state, proxy every HTTP read through public-address validation, block POSTs/WebSockets/WebRTC and close the browser after 18 seconds. They require server-installed Chromium plus ENABLE_RENDERED_CHECKS=true; the default free Render setup leaves them disabled. Lazy-loaded images are unverified rather than automatically broken. CSS background images and every download format are still outside this release.
 - Sitemap indexes and reliable CMS-template-to-individual-item URL mapping are not implemented. URLs discovered in a flat sitemap are audited as published pages without guessing their CMS source. A selected template is not equivalent to all of its rendered CMS item pages.
 - There is no dedicated multi-worker queue, relational Drizzle schema, Fastify migration or durable partial-job cursor. The existing PostgreSQL encrypted state and single-process queue remain; do not scale the Render service beyond one instance. Recovery reruns an audit rather than resuming a browser.
-- Session identity still uses OAuth and seven-day LaunchGuard sessions. History is tied to that session, and reauthorization starts a new session. Native Designer ID-token identity resolution is not implemented.
+- Session identity uses OAuth and seven-day LaunchGuard sessions. The session restoration update can verify Designer ID tokens to recover the same bound, unexpired session; see SESSION_RESTORATION.md for required permission/configuration and live verification. History remains tied to the session, and reauthorization starts a new session. Permanent user accounts and session-history migration are not implemented.
 - Shared report access is based on Webflow site authorization, not an email allowlist or invitation system. There is no account billing or organization directory.
 - The expanded release passes controlled fixtures plus a bounded real staging smoke test (one published page, seven requests, three link findings, explicit partial coverage). Uploaded Designer page navigation and report access by a second real Webflow user still need manual verification. External-workspace installation remains subject to Webflow approval.
 - No automatic editing, publishing, forms, purchases, AI or billing is implemented.

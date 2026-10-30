@@ -6,8 +6,11 @@ import {fileURLToPath} from 'node:url';
 import {openStorage} from './storage.js';
 import {runAudit} from './audit-runner.js';
 import {PUBLISHED_CHECKS} from './published-audit.js';
+import {designerSession} from './designer-session.js';
+import {browserStatus} from './rendered-checks.js';
 const PORT=Number(process.env.PORT||8787), DB=resolve(process.env.LAUNCHGUARD_DB||'./data/launchguard.json');
 const production=process.env.NODE_ENV==='production';
+const browserRuntime=await browserStatus();
 const CLIENT_ID=process.env.WEBFLOW_CLIENT_ID,CLIENT_SECRET=process.env.WEBFLOW_CLIENT_SECRET,BASE=(process.env.PUBLIC_BASE_URL||process.env.RENDER_EXTERNAL_URL||`http://localhost:${PORT}`).replace(/\/$/,'');
 const storage=await openStorage({file:DB,databaseUrl:process.env.DATABASE_URL,encryptionKey:process.env.TOKEN_ENCRYPTION_KEY,production});
 let db=storage.data;
@@ -16,6 +19,7 @@ const publicDir=fileURLToPath(new URL('../../designer/dist/',import.meta.url));
 let saving=Promise.resolve();
 const persist=()=>{saving=saving.catch(()=>{}).then(async()=>{const sessions=Object.fromEntries(Object.entries(db.sessions).filter(([id])=>id!=='local-development'));await storage.save({...db,sessions})});return saving};
 const origins=new Set((process.env.ALLOWED_ORIGINS||(production?'':'http://localhost:5173,http://localhost:5174,http://localhost:1337')).split(',').map(x=>x.trim()).filter(Boolean).concat(new URL(BASE).origin,new URL(frontend).origin));
+const identityEnabled=process.env.WEBFLOW_IDENTITY_ENABLED==='true', identityRequests=new Map();
 const json=(res,code,obj)=>{res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store',...(res.allowedOrigin?{'Access-Control-Allow-Origin':res.allowedOrigin,'Vary':'Origin'}:{}),'Access-Control-Allow-Credentials':'true','Access-Control-Allow-Headers':'Content-Type,Authorization','Access-Control-Allow-Methods':'GET,POST,OPTIONS'});res.end(JSON.stringify(obj))};
 const readBody=async(req)=>{let s='';for await(const part of req){s+=part;if(s.length>100000)throw Error('Body too large')}return JSON.parse(s||'{}')};
 const api=async(path,token)=>{for(let attempt=0;attempt<3;attempt++){const r=await fetch('https://api.webflow.com/v2'+path,{signal:AbortSignal.timeout(15000),headers:{Authorization:`Bearer ${token}`,'accept-version':'2.0.0'}});if(r.ok)return r.json();if((r.status===429||r.status>=500)&&attempt<2){const seconds=Math.min(10,Math.max(1,Number(r.headers.get('retry-after'))||2**attempt));await new Promise(done=>setTimeout(done,seconds*1000));continue;}throw Error(`Webflow API ${r.status} for ${path}`)}};
@@ -45,11 +49,23 @@ catch(error){console.error('Audit queue stopped:',error.message);}
 finally{queueRunning=false;}
 }
 const server=http.createServer(async(req,res)=>{try{if(req.headers.origin){if(!origins.has(req.headers.origin))return json(res,403,{error:'Origin not allowed'});res.allowedOrigin=req.headers.origin;}const url=new URL(req.url,BASE),p=url.pathname;if(req.method==='OPTIONS')return json(res,204,{});
-if(p==='/health')return json(res,200,{ok:true,version:'0.4.0',storageReady:storage.ready});
+if(p==='/health')return json(res,200,{ok:true,version:'0.4.1',storageReady:storage.ready,features:{visualEvidence:true,designerIdentity:identityEnabled},browser:browserRuntime,commit:process.env.RENDER_GIT_COMMIT?.slice(0,7)});
 if(req.method==='GET'&&(p==='/'||p.startsWith('/assets/'))){
 const path=resolve(publicDir,p==='/'?'index.html':'.'+p);
 if(!path.startsWith(resolve(publicDir)+sep))return json(res,404,{error:'Not found'});
 try{const content=await readFile(path);const mime={'.html':'text/html; charset=utf-8','.js':'application/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml'}[extname(path)]||'application/octet-stream';res.writeHead(200,{'Content-Type':mime,'X-Content-Type-Options':'nosniff','Cache-Control':p==='/'?'no-cache':'public, max-age=31536000, immutable'});return res.end(content)}catch{return json(res,404,{error:'Dashboard not built; run npm run build'})}
+}
+if(p==='/auth/designer'&&req.method==='POST'){
+if(!storage.ready||!identityEnabled)return json(res,503,{error:'Automatic connection requires WEBFLOW_IDENTITY_ENABLED=true and Authorized User: Read permission.'});
+if(!req.headers.origin||!origins.has(req.headers.origin))return json(res,403,{error:'Extension origin required'});
+const now=Date.now();for(const [key,value]of identityRequests)if(now-value.started>60000)identityRequests.delete(key);
+const address=req.socket.remoteAddress,rate=identityRequests.get(address)||{started:now,count:0};
+if(rate.count>=30)return json(res,429,{error:'Too many connection attempts; try again in a minute.'});
+rate.count++;identityRequests.set(address,rate);
+const body=await readBody(req),sid=auth(req)?sessionId(req):undefined;
+try{const restored=await designerSession({sessions:db.sessions,sid,idToken:body.idToken,siteId:body.siteId,sites:token=>all('/sites','sites',token),persist});
+return restored?json(res,200,restored):json(res,401,{error:'Connect Webflow once to enable automatic connection for this user and site.'});
+}catch{return json(res,401,{error:'Webflow identity verification failed. Enable Authorized User: Read and reconnect once.'});}
 }
 if(p==='/auth/start'&&req.method==='GET'){
 if(!storage.ready)return json(res,503,{error:'Configure DATABASE_URL and TOKEN_ENCRYPTION_KEY in Render first'});
@@ -62,7 +78,7 @@ for(const [key,value] of Object.entries(db.states))if(Date.now()-value.created>6
 const returnTo=url.searchParams.get('return_to');
 db.states[state]={created:Date.now(),browserHash:createHash('sha256').update(state).digest('hex'),clientOrigin,returnTo:/^\/\?report=[a-f0-9]{48}$/.test(returnTo||'')?returnTo:''};
 await persist();
-const params=new URLSearchParams({response_type:'code',client_id:CLIENT_ID,redirect_uri:BASE+'/auth/callback',state,scope:'sites:read cms:read pages:read'});
+const params=new URLSearchParams({response_type:'code',client_id:CLIENT_ID,redirect_uri:BASE+'/auth/callback',state,scope:'sites:read cms:read pages:read'+(identityEnabled?' authorized_user:read':'')});
 res.writeHead(302,{'Set-Cookie':'lg_oauth_state='+state+'; HttpOnly; SameSite=Lax; Path=/auth; Max-Age=600'+(BASE.startsWith('https:')?'; Secure':''),Location:'https://webflow.com/oauth/authorize?'+params});return res.end();
 }
 if(p==='/auth/callback'&&req.method==='GET'){
@@ -103,7 +119,7 @@ const job=db.scans[share.scanId];if(!job)return json(res,404,{error:'Report unav
 const sites=await all('/sites','sites',session.token);if(!sites.some(site=>site.id===job.siteId))return json(res,403,{error:'Authorize this Webflow site to access the report'});
 const {sessionId:privateSession,rules:privateRules,policy:privatePolicy,...report}=job;
 const cleanUrl=value=>{if(!value)return value;try{const url=new URL(value);url.search='';url.hash='';return url.href;}catch{return undefined;}};
-report.findings=job.findings.filter(f=>!f.isDraft&&!f.isArchived).map(({observed,expected,...finding})=>({...finding,url:cleanUrl(finding.url),resourceUrl:cleanUrl(finding.resourceUrl),affectedUrls:finding.affectedUrls?.map(cleanUrl)}));
+report.findings=job.findings.filter(f=>!f.isDraft&&!f.isArchived).map(({observed,expected,visualEvidence,...finding})=>({...finding,url:cleanUrl(finding.url),resourceUrl:cleanUrl(finding.resourceUrl),affectedUrls:finding.affectedUrls?.map(cleanUrl),...(visualEvidence?{visualEvidence:{status:'Unavailable',reason:'Screenshots are available only to the audit owner.',captures:[]}}:{})}));
 return json(res,200,{scan:report,shared:true});
 }
 const shareManage=p.match(/^\/api\/scans\/([a-f0-9-]+)\/share$/);
@@ -128,6 +144,7 @@ const sites=await all('/sites','sites',session.token);if(!sites.some(s=>s.id===b
 const active=Object.values(db.scans).find(job=>job.sessionId===sessionId(req)&&['queued','running'].includes(job.status));if(active)return json(res,409,{error:'An audit is already running',scanId:active.id});
 const allowedChecks=new Set(['SEO metadata','CMS assets',...PUBLISHED_CHECKS]);
 if(!Array.isArray(body.checks)||body.checks.some(check=>!allowedChecks.has(check)))return json(res,400,{error:'Unknown audit check'});
+if(body.checks.includes('Visual evidence')&&!body.checks.some(check=>PUBLISHED_CHECKS.includes(check)&&check!=='Visual evidence'))return json(res,400,{error:'Select a published-content check along with Visual evidence.'});
 if(body.environment!==undefined&&!['Live','Staging'].includes(body.environment))return json(res,400,{error:'Invalid environment'});
 const validIds=value=>Array.isArray(value)&&value.length<=2000&&value.every(id=>typeof id==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(id));
 const scope=body.scope||{};if(typeof scope!=='object'||Array.isArray(scope))return json(res,400,{error:'Invalid selected scope'});for(const key of ['pageIds','collectionIds','itemIds'])if(scope[key]!==undefined&&!validIds(scope[key]))return json(res,400,{error:'Invalid selected scope'});for(const key of ['skipPages','skipCMS'])if(scope[key]!==undefined&&typeof scope[key]!=='boolean')return json(res,400,{error:'Invalid selected scope'});

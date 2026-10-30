@@ -4,8 +4,9 @@ import {XMLParser} from 'fast-xml-parser';
 import {normalizeUrl, safeRead} from './safe-http.js';
 import {resourceStatus} from './resource-checks.js';
 import {inspectRendered} from './rendered-checks.js';
+import {captureVisualEvidence,visualTarget} from './visual-evidence.js';
 
-export const PUBLISHED_CHECKS = ['Published SEO', 'Internal links', 'Download links', 'Image loading', 'Image alt text', 'Headings', 'Contact details', 'Indexing policy', 'Rendered DOM'];
+export const PUBLISHED_CHECKS = ['Published SEO', 'Internal links', 'Download links', 'Image loading', 'Image alt text', 'Headings', 'Contact details', 'Indexing policy', 'Rendered DOM', 'Visual evidence'];
 export function inspectHtml(html, url) {
   const $ = load(html);
   const base = normalizeUrl($('base[href]').first().attr('href'), url) || url;
@@ -74,6 +75,7 @@ export async function auditPublished({site, pages, job, emit, persist, read = sa
   job.coverage.requested = queue.size;
   const metadata = [];
   let renderedPages=0;
+  let visualPages=0,visualFindings=0;
   for (const [url, location] of queue) {
     if (job.cancelled) break;
     if (job.coverage.checked + job.publishedResults.filter(r => r.status === 'Could not verify').length >= maximum) {job.coverage.limited = true; break;}
@@ -128,6 +130,18 @@ export async function auditPublished({site, pages, job, emit, persist, read = sa
         if (fragment && !inspectHtml(result.bytes.toString(), link.url).ids.has(fragment)) status = 'Issue';
       }
       if (status !== 'Pass') emit(link.download ? 'download-link' : 'internal-link', {...context, resourceUrl: link.url + link.fragment, status, title: link.download ? 'Download could not be verified or is broken' : 'Internal link is broken or could not be verified', detail: result.error || `HTTP ${result.status}; link text: ${link.text || '(empty)'}`, fix: link.download ? 'Check the download target and expected file, then replace or remove the link.' : 'Correct the destination URL or fragment in Designer or CMS, publish and recheck.'});
+    }
+    if(checks.has('Visual evidence')){
+      const pageFindings=job.findings.slice(before);
+      for(const finding of pageFindings)finding.visualEvidence={status:'Unavailable',reason:visualTarget(finding)?'Screenshot capture limit reached.':'This rule has no uniquely identifiable visible element.',captures:[]};
+      const candidates=pageFindings.filter(visualTarget).slice(0,Math.max(0,4-visualFindings));
+      if(candidates.length&&visualPages<2&&!job.cancelled){
+        job.progress.phase='Visual evidence';await persist();
+        const evidence=await captureVisualEvidence(response.url||url,candidates,{read:request,cancelled:()=>job.cancelled});
+        for(const finding of candidates)finding.visualEvidence=evidence.get(finding.id);
+        visualPages++;visualFindings+=candidates.length;
+      }
+      if(pageFindings.some(f=>visualTarget(f)&&f.visualEvidence.captures.length<2))job.visualEvidencePartial=true;
     }
     job.coverage.checked++;
     const added = job.findings.slice(before);

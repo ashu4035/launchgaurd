@@ -1,5 +1,7 @@
 # Render deployment preparation
 
+For provider-independent deployment, backup/restore, domain changes and rollback, use [Hosting and Database Migration](HOSTING_AND_DATABASE_MIGRATION.md). That runbook supersedes older operational notes below where they conflict.
+
 ## Current state
 
 The Render service now serves both the dashboard and API. Hosted OAuth requires PostgreSQL via DATABASE_URL and a 64-character hex TOKEN_ENCRYPTION_KEY. State, sessions, Webflow tokens and scan history are encrypted with AES-256-GCM before being stored. Local development without DATABASE_URL still uses JSON and a local site token. Hosted OAuth is disabled until persistent storage is configured.
@@ -33,6 +35,6 @@ Enable both Designer Extension and Data Client capabilities, with sites, CMS and
 
 ## Operational limits and verification
 
-Run one service instance. Persistent snapshots use an optimistic revision check to refuse concurrent stale writes; this is not a multi-instance database architecture. Render Free can restart or sleep mid-scan. Interrupted scans are marked failed on startup so users can rerun them; automatic resumable jobs are not implemented. Sessions expire after seven days, and scan history is tied to that session. Reauthorizing creates a new session.
+Run one service instance. Persistent snapshots use an optimistic revision check to refuse concurrent stale writes; this is not a multi-instance database architecture. Render Free can restart or sleep mid-scan. Startup requeues interrupted queued/running scans for up to three total attempts, recomputing findings; it does not resume a durable partial-job cursor. Sessions expire after seven days, and scan history is tied to that session. Reauthorizing creates a new session.
 
 Tests cover encryption integrity, browser-bound OAuth state, replay rejection, the cookie dashboard session, popup handoff, bearer-session revocation, site authorization and audit results against mocked Webflow. Live PostgreSQL and the uploaded Designer execution still require verification after account configuration. Do not describe this as Marketplace-ready.

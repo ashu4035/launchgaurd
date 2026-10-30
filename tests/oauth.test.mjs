@@ -22,7 +22,7 @@ test('hosted dashboard and OAuth validate browser state, session isolation, repl
   const folder = await mkdtemp(join(tmpdir(), 'launchguard-oauth-'));
   const base = 'http://127.0.0.1:18880';
   const child = spawn(process.execPath, ['--import', pathToFileURL(resolve('tests/webflow-mock.mjs')).href, 'apps/api/src/server.js'], {
-    env: {...process.env, PORT: '18880', NODE_ENV: 'test', WEBFLOW_SITE_API_TOKEN: '', DATABASE_URL: '', PUBLIC_BASE_URL: base, FRONTEND_ORIGIN: base, WEBFLOW_CLIENT_ID: 'mock-client', WEBFLOW_CLIENT_SECRET: 'mock-secret', LAUNCHGUARD_DB: join(folder, 'db.json')}, stdio: ['ignore', 'pipe', 'pipe'],
+    env: {...process.env, PORT: '18880', NODE_ENV: 'test', WEBFLOW_SITE_API_TOKEN: '', DATABASE_URL: '', PUBLIC_BASE_URL: base, FRONTEND_ORIGIN: base, WEBFLOW_IDENTITY_ENABLED:'true', WEBFLOW_CLIENT_ID: 'mock-client', WEBFLOW_CLIENT_SECRET: 'mock-secret', LAUNCHGUARD_DB: join(folder, 'db.json')}, stdio: ['ignore', 'pipe', 'pipe'],
   });
   const exited = once(child, 'exit');
   let stderr = ''; child.stderr.on('data', value => {stderr += value;});
@@ -55,6 +55,14 @@ test('hosted dashboard and OAuth validate browser state, session isolation, repl
     assert.match(html, /postMessage/); assert.match(html, /http:\/\/localhost:1337/);
     assert.equal(html.includes('mock-webflow-token'), false);
     const sid = complete.headers.getSetCookie().find(value => value.startsWith('lg_session=')).split(';')[0].split('=')[1];
+    const restore=(token,session,origin='http://localhost:1337')=>fetch(base+'/auth/designer',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...(session?{Authorization:'Bearer '+session}:{})},body:JSON.stringify({siteId:'site-one',idToken:token})});
+    assert.equal((await restore('mock-designer-proof')).status,401);
+    assert.equal((await restore('forged',sid)).status,401);
+    assert.equal((await restore('mock-designer-proof',sid,'https://attacker.example')).status,403);
+    assert.equal((await restore('mock-designer-proof',sid)).status,200);
+    const restored=await restore('mock-designer-proof');assert.equal(restored.status,200);assert.equal((await restored.json()).session,sid);
+    const persistedIdentity=JSON.parse(await readFile(join(folder,'db.json'),'utf8')).sessions[sid].designer;
+    assert.deepEqual(persistedIdentity,{userId:'designer-one',siteId:'site-one'});
     const authorized = await fetch(base + '/api/sites', {headers: {Authorization: 'Bearer ' + sid, Origin: 'http://localhost:1337'}});
     assert.equal(authorized.status, 200);
     assert.equal((await fetch(base+'/api/scans/'+scanId,{headers:{Authorization:'Bearer '+sid}})).status,404);
@@ -69,6 +77,7 @@ test('hosted dashboard and OAuth validate browser state, session isolation, repl
     const logout = await fetch(base + '/api/disconnect', {method: 'POST', headers: {Authorization: 'Bearer ' + sid, Origin: 'http://localhost:1337'}});
     assert.equal(logout.status, 200);
     assert.equal((await fetch(base + '/api/sites', {headers: {Authorization: 'Bearer ' + sid}})).status, 401);
+    assert.equal((await restore('mock-designer-proof')).status,401);
     const saved = JSON.parse(await readFile(join(folder, 'db.json'), 'utf8'));
     assert.equal(saved.states[state], undefined);
   } finally {

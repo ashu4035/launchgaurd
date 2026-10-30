@@ -1,8 +1,9 @@
 import React, {useEffect, useState, useRef} from 'react';
-import {ShieldCheck, RefreshCw, Play, X, Search, Download, Copy, ExternalLink, CheckCircle2, AlertTriangle, Clock3, LogOut, RotateCcw, Link2} from 'lucide-react';
+import {ShieldCheck, RefreshCw, Play, X, Search, Download, Copy, ExternalLink, CheckCircle2, AlertTriangle, Clock3, LogOut, RotateCcw, Link2, FileText, List} from 'lucide-react';
+import {DefectSummary,VisualFinding,exportVisualReport,type VisualEvidence} from './VisualReport';
 import './audit.css';
 
-type Finding = {id:string; ruleId:string; status:string; severity:string; source:string; title:string; detail:string; fix:string; collection?:string; collectionId?:string; item?:string; itemId?:string; field?:string; fieldName?:string; page?:string; pageId?:string; locale?:string; url?:string; resourceUrl?:string; observed?:string; expected?:string; isDraft?:boolean; affectedUrls?:string[]; environment?:string};
+export type Finding = {id:string; ruleId:string; status:string; severity:string; source:string; title:string; detail:string; fix:string; collection?:string; collectionId?:string; item?:string; itemId?:string; field?:string; fieldName?:string; page?:string; pageId?:string; locale?:string; url?:string; resourceUrl?:string; observed?:string; expected?:string; isDraft?:boolean; affectedUrls?:string[]; environment?:string;visualEvidence?:VisualEvidence};
 type PageResult = {pageId?:string; name:string; status:string; issues?:number; detail:string; url?:string};
 type Scan = {id:string; siteId:string; siteName?:string; environment?:string; status:string; createdAt:string; issues?:number; warnings?:number; unverified?:number; error?:string; partial?:boolean; checks?:string[]; findings?:Finding[]; pageResults?:PageResult[]; publishedResults?:PageResult[]; progress?:{phase?:string; items?:number; pages?:number; checked?:number; skipped?:number; unverified?:number}; coverage?:{requested:number; checked:number; skipped:number; unverified:number; requests:number; limited:boolean}};
 type Site = {id:string; displayName?:string; name?:string; customDomains?:{url:string}[]};
@@ -13,7 +14,7 @@ const checkOptions = [{id:'Published SEO',name:'Published titles and description
 const toggle = (values:string[], key:string) => values.includes(key) ? values.filter(value=>value!==key) : [...values,key];
 const active = (scan:Scan|null) => !!scan && ['queued','running'].includes(scan.status);
 function download(name:string, text:string, type:string) {const url=URL.createObjectURL(new Blob([text],{type})); const link=document.createElement('a'); link.href=url; link.download=name; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);}
-export function AuditApp({designerSite, apiBase='', navigatePage}: {designerSite?:{siteId:string;siteName:string};apiBase?:string;navigatePage?:(id:string)=>Promise<void>}) {
+export function AuditApp({designerSite, apiBase='', navigatePage, getIdToken}: {designerSite?:{siteId:string;siteName:string};apiBase?:string;navigatePage?:(id:string)=>Promise<void>;getIdToken?:()=>Promise<string>}) {
  const [sites,setSites]=useState<Site[]>([]),[siteId,setSiteId]=useState('');
  const [collections,setCollections]=useState<Collection[]>([]),[pages,setPages]=useState<Page[]>([]);
  const [rules,setRules]=useState<string[]>([]),[chosen,setChosen]=useState(['Published SEO','Internal links','Download links','Image loading']);
@@ -24,24 +25,40 @@ export function AuditApp({designerSite, apiBase='', navigatePage}: {designerSite
  const [view,setView]=useState('setup'),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [connected,setConnected]=useState(false),[busy,setBusy]=useState(false),[inventoryLoading,setInventoryLoading]=useState(false),[local,setLocal]=useState(false),[shared,setShared]=useState(false);
  const [query,setQuery]=useState(''),[source,setSource]=useState('All sources'),[severity,setSeverity]=useState('All severities'),[status,setStatus]=useState('All statuses'),[collectionFilter,setCollectionFilter]=useState('All collections'),[locale,setLocale]=useState('All locales'),[resultPage,setResultPage]=useState(1);
- const [grouped,setGrouped]=useState(true),[previous,setPrevious]=useState<Scan|null>(null);
+ const [grouped,setGrouped]=useState(true),[previous,setPrevious]=useState<Scan|null>(null),[reportMode,setReportMode]=useState(false);
  const authWindow=useRef<Window|null>(null),detailsClose=useRef<HTMLButtonElement|null>(null);
- const sessionKey='launchguard-session:'+apiBase;
- const [extensionSession,setExtensionSession]=useState(()=>designerSite?sessionStorage.getItem(sessionKey)||'':'');
+ const [extensionSession,setExtensionSession]=useState('');
+ const [restoring,setRestoring]=useState(!!designerSite);
+ const identityRequest=async(session?:string)=>{
+  if(!designerSite||!getIdToken)throw Error('Designer identity is unavailable.');
+  const response=await fetch(apiBase+'/auth/designer',{method:'POST',credentials:'omit',headers:{'Content-Type':'application/json',...(session?{Authorization:'Bearer '+session}:{})},body:JSON.stringify({idToken:await getIdToken(),siteId:designerSite.siteId})});
+  const data=await response.json();
+  if(!response.ok)throw Error(data.error||'Could not restore connection.');
+  if(!/^[a-f0-9]{64}$/.test(data.session))throw Error('Invalid connection response.');
+  return data.session as string;
+ };
+ useEffect(()=>{
+  if(!designerSite)return;let keep=true;
+  // Remove the old temporary credential; new credentials live in memory only.
+  try{sessionStorage.removeItem('launchguard-session:'+apiBase);}catch{/* Storage can be unavailable in an embedded frame. */}
+  setRestoring(true);setExtensionSession('');setConnected(false);
+  identityRequest().then(session=>{if(keep)setExtensionSession(session);}).catch(()=>{}).finally(()=>{if(keep)setRestoring(false);});
+  return()=>{keep=false;};
+ },[designerSite?.siteId,apiBase]);
  const reportId=new URLSearchParams(window.location.search).get('report');
  const api=async(path:string,body?:unknown)=>{
   const response=await fetch(apiBase+'/api'+path,{credentials:designerSite?'omit':'include',headers:{...(extensionSession?{Authorization:'Bearer '+extensionSession}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{})},...(body!==undefined?{method:'POST',body:JSON.stringify(body)}:{})});
   const data=await response.json();
-  if(response.status===401){setConnected(false);if(designerSite){sessionStorage.removeItem(sessionKey);setExtensionSession('');}}
+  if(response.status===401){setConnected(false);if(designerSite)setExtensionSession('');}
   if(!response.ok)throw Error(data.error||'Request failed'); return data;
  };
  const refresh=async()=>{try{setError('');const data=await api('/sites');setSites(data.sites);setConnected(true);setSiteId(current=>designerSite?.siteId||current||data.sites[0]?.id||'');setHistory((await api('/scans')).scans);setLocal((await api('/session')).local);
  if(reportId){const report=await api('/reports/'+encodeURIComponent(reportId));setScan(report.scan);setShared(true);setView('results');}
  }catch(error){setError((error as Error).message);}};
- useEffect(()=>{void refresh();},[designerSite?.siteId,extensionSession]);
+ useEffect(()=>{if(!designerSite||extensionSession)void refresh();},[designerSite?.siteId,extensionSession]);
  useEffect(()=>{
   if(!designerSite||!apiBase)return;
-  const listener=(event:MessageEvent)=>{if(event.origin!==new URL(apiBase).origin||event.source!==authWindow.current||event.data?.type!=='launchguard-connected'||!/^[a-f0-9]{64}$/.test(event.data.session||''))return;sessionStorage.setItem(sessionKey,event.data.session);setExtensionSession(event.data.session);authWindow.current=null;};
+  const listener=(event:MessageEvent)=>{if(event.origin!==new URL(apiBase).origin||event.source!==authWindow.current||event.data?.type!=='launchguard-connected'||!/^[a-f0-9]{64}$/.test(event.data.session||''))return;const session=event.data.session;setExtensionSession(session);authWindow.current=null;identityRequest(session).catch(()=>setNotice('Connected for this launch. Automatic reconnection needs Authorized User: Read permission and the updated server configuration.'));};
   window.addEventListener('message',listener);return()=>window.removeEventListener('message',listener);
  },[apiBase,designerSite?.siteId]);
  useEffect(()=>{
@@ -68,20 +85,20 @@ export function AuditApp({designerSite, apiBase='', navigatePage}: {designerSite
  const visible=findings.filter(f=>([f.title,f.detail,f.page,f.collection,f.item,f.field,f.fieldName,f.url].join(' ').toLowerCase().includes(query.toLowerCase()))&&(source==='All sources'||f.source===source)&&(severity==='All severities'||f.severity===severity)&&(status==='All statuses'||f.status===status)&&(collectionFilter==='All collections'||f.collection===collectionFilter)&&(locale==='All locales'||f.locale===locale));
  const groups=new Map<string,{finding:Finding;count:number}>();
  for(const finding of visible){const key=grouped&&finding.resourceUrl?[finding.ruleId,finding.resourceUrl,finding.status].join('|'):finding.id;const group=groups.get(key);if(group)group.count++;else groups.set(key,{finding,count:1});}
- const rows=[...groups.values()],totalPages=Math.max(1,Math.ceil(rows.length/20)),currentPage=Math.min(resultPage,totalPages);
+ const rows=[...groups.values()],totalPages=Math.max(1,Math.ceil((reportMode?visible.length:rows.length)/20)),currentPage=Math.min(resultPage,totalPages);
  const issueCount=findings.filter(f=>f.status==='Issue').length,warningCount=findings.filter(f=>f.status==='Warning').length,unverifiedCount=findings.filter(f=>f.status==='Could not verify').length;
  const resolved=scan?.status==='complete'&&!scan.partial?previous?.findings?.filter(old=>!findings.some(f=>f.id===old.id)).length||0:0;
  const exportReport=(format:string)=>{if(!scan)return;const {findings:allFindings,...summary}=scan;if(format==='json')download('launchguard-'+scan.id+'.json',JSON.stringify({report:summary,findings:allFindings},null,2),'application/json');else{const quote=(value:unknown)=>{let text=String(value??'');if(/^[=+@\-\t\r]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};const records=[['Status','Severity','Source','Page','Collection','Item','Field','Issue','Evidence','Fix','URL'],...findings.map(f=>[f.status,f.severity,f.source,f.page,f.collection,f.item,f.field,f.title,f.detail,f.fix,f.url||f.resourceUrl])];download('launchguard-'+scan.id+'.csv',records.map(row=>row.map(quote).join(',')).join('\r\n'),'text/csv');}};
- const disconnect=async()=>{try{await api('/disconnect',{});sessionStorage.removeItem(sessionKey);setExtensionSession('');setConnected(false);setScan(null);setHistory([]);setSites([]);}catch(error){setError((error as Error).message);}};
+ const disconnect=async()=>{try{await api('/disconnect',{});setExtensionSession('');setConnected(false);setScan(null);setHistory([]);setSites([]);setNotice('');}catch(error){setError((error as Error).message);}};
  return <main className="audit-app">
  <header><div className="audit-brand"><ShieldCheck size={28}/><div><h1>LaunchGuard</h1><p>{designerSite?.siteName||sites.find(site=>site.id===siteId)?.displayName||'Website audits'}</p></div></div><div className="toolbar"><button title="Refresh connection and inventory" aria-label="Refresh" onClick={()=>void refresh()}><RefreshCw size={17}/></button>{connected&&!local&&<button title="Disconnect Webflow" aria-label="Disconnect" onClick={()=>void disconnect()}><LogOut size={17}/></button>}</div></header>
  {error&&<p role="alert" className="audit-error">{error}</p>}{notice&&<p role="status" className="audit-notice">{notice}</p>}
- {!connected?<section className="connection"><ShieldCheck size={40}/><h2>Connect Webflow</h2>{designerSite?<button className="audit-action" onClick={connect}>Connect Webflow</button>:<a className="audit-action" href={'/auth/start'+(reportId?'?return_to='+encodeURIComponent('/?report='+reportId):'')}>Connect Webflow</a>}</section>:<>
+ {restoring?<section className="connection" role="status">Restoring connection...</section>:!connected?<section className="connection"><ShieldCheck size={40}/><h2>Connect Webflow</h2>{designerSite?<button className="audit-action" onClick={connect}>Connect Webflow</button>:<a className="audit-action" href={'/auth/start'+(reportId?'?return_to='+encodeURIComponent('/?report='+reportId):'')}>Connect Webflow</a>}</section>:<>
  <nav className="tabs" aria-label="Audit views">{['setup','results','history'].map(tab=><button key={tab} aria-current={view===tab?'page':undefined} onClick={()=>setView(tab)}>{tab==='setup'?'New audit':tab==='results'?'Results':'History'}</button>)}</nav>
  {view==='setup'&&<section><div className="section-heading"><h2>Audit setup</h2><span className="muted">{local?'Local token':'OAuth connected'}</span></div>
  <div className="setup-grid"><label>Website<select value={siteId} disabled={!!designerSite||inventoryLoading} onChange={event=>setSiteId(event.target.value)}>{sites.map(site=><option key={site.id} value={site.id}>{site.displayName||site.name||site.id}</option>)}</select></label><label>Environment<select value={environment} onChange={event=>setEnvironment(event.target.value)}><option>Staging</option><option>Live</option></select></label></div>
  {environment==='Live'&&!sites.find(site=>site.id===siteId)?.customDomains?.length&&<p className="audit-notice">No live custom domain is available. Published checks will be marked unverified. Staging checks use the Webflow publishing domain.</p>}
- <h3>Checks</h3><div className="check-grid">{checkOptions.map(check=><label key={check.id} className="audit-check"><input type="checkbox" checked={chosen.includes(check.id)} onChange={()=>setChosen(toggle(chosen,check.id))}/>{check.name}</label>)}</div>
+ <h3>Checks</h3><div className="check-grid">{[...checkOptions,{id:'Visual evidence',name:'Visual evidence (desktop and mobile screenshots)'}].map(check=><label key={check.id} className="audit-check"><input type="checkbox" checked={chosen.includes(check.id)} onChange={()=>setChosen(toggle(chosen,check.id))}/>{check.name}</label>)}</div>
  {chosen.includes('Indexing policy')&&<label className="audit-check"><input type="checkbox" checked={stagingNoindex} onChange={event=>setStagingNoindex(event.target.checked)}/>Expect staging pages to be noindex</label>}
  {chosen.includes('Contact details')&&<label>Contact text expected on selected pages<textarea value={contacts} onChange={event=>setContacts(event.target.value)} rows={3}/></label>}
  <h3>Content scope</h3><select aria-label="Content scope" value={scopeMode} onChange={event=>setScopeMode(event.target.value)}><option>All content</option><option>Selected content</option></select>
@@ -97,8 +114,9 @@ export function AuditApp({designerSite, apiBase='', navigatePage}: {designerSite
  {!active(scan)&&scan.status==='complete'&&!findings.length&&!scan.partial&&<p role="status" className="audit-success"><CheckCircle2 size={18}/>All selected checks passed for the completed scope.</p>}
  <details><summary>Coverage and enabled checks</summary><p>{scan.checks?.join(' · ')||'Saved CMS fields'}</p><p>Saved checks: {scan.progress?.checked||0}. Skipped: {scan.progress?.skipped||0}. Published pages requested: {scan.coverage?.requested||0}; checked: {scan.coverage?.checked||0}; skipped: {scan.coverage?.skipped||0}; unverified: {scan.coverage?.unverified||0}.</p>{[...(scan.pageResults||[]),...(scan.publishedResults||[])].map((page,index)=><div className="coverage-row" key={String(page.pageId||page.url)+index}><span>{page.name}</span><span className={'status '+page.status.toLowerCase().replace(/ /g,'-')}>{page.status}</span><small>{page.detail}</small></div>)}</details>
  <div className="filters"><label className="search"><Search size={17}/><input aria-label="Search findings" placeholder="Search pages, collections, items, fields..." value={query} onChange={event=>setQuery(event.target.value)}/></label>{[[source,setSource,['All sources','CMS','Page','Asset']],[severity,setSeverity,['All severities','High','Medium','Low']],[status,setStatus,['All statuses','Issue','Warning','Could not verify']],[collectionFilter,setCollectionFilter,['All collections',...new Set(findings.map(f=>f.collection).filter(Boolean))]],[locale,setLocale,['All locales',...new Set(findings.map(f=>f.locale).filter(Boolean))]]] .map(([value,setter,options],index)=><select key={index} aria-label={['Source','Severity','Status','Collection','Locale'][index]} value={value as string} onChange={event=>(setter as (value:string)=>void)(event.target.value)}>{(options as string[]).map(option=><option key={option}>{option}</option>)}</select>)}</div>
- <div className="section-heading"><span>{visible.length} matching findings</span><label className="audit-check"><input type="checkbox" checked={grouped} onChange={event=>setGrouped(event.target.checked)}/>Group repeated resource issues</label></div>
- <div className="finding-list">{rows.slice((currentPage-1)*20,currentPage*20).map(({finding,count})=><button className="finding-row" key={finding.id} onClick={()=>setSelected(finding)}><AlertTriangle size={18}/><span><strong>{finding.title}</strong><small>{[finding.collection,finding.item,finding.page,finding.fieldName||finding.field].filter(Boolean).join(' / ')||finding.url||finding.source}{count>1?' · '+count+' affected locations':''}</small></span><span className="status">{finding.status}</span><span className="severity">{finding.severity}</span></button>)}</div>
+ <div className="section-heading"><span>{visible.length} matching findings</span><label className="audit-check"><input type="checkbox" disabled={reportMode} checked={grouped} onChange={event=>setGrouped(event.target.checked)}/>Group repeated resource issues</label></div>
+ <div className="toolbar" role="group" aria-label="Report view"><button title="Compact findings" aria-label="Compact findings" aria-pressed={!reportMode} onClick={()=>setReportMode(false)}><List size={17}/></button><button title="Visual report" aria-label="Visual report" aria-pressed={reportMode} onClick={()=>setReportMode(true)}><FileText size={17}/></button><button title="Download visual HTML report" aria-label="Download visual HTML report" onClick={()=>download('launchguard-'+scan.id+'.html',exportVisualReport(scan),'text/html')}><Download size={17}/><FileText size={17}/></button></div>
+ {reportMode?<><DefectSummary findings={findings}/>{visible.slice((currentPage-1)*20,currentPage*20).map(finding=><VisualFinding key={finding.id} finding={finding} number={findings.indexOf(finding)+1} onDetails={setSelected}/>)}</>:<div className="finding-list">{rows.slice((currentPage-1)*20,currentPage*20).map(({finding,count})=><button className="finding-row" key={finding.id} onClick={()=>setSelected(finding)}><AlertTriangle size={18}/><span><strong>{finding.title}</strong><small>{[finding.collection,finding.item,finding.page,finding.fieldName||finding.field].filter(Boolean).join(' / ')||finding.url||finding.source}{count>1?' · '+count+' affected locations':''}</small></span><span className="status">{finding.status}</span><span className="severity">{finding.severity}</span></button>)}</div>}
  {!rows.length&&<p className="empty">No findings match these filters.</p>}
  <div className="section-heading"><button disabled={currentPage===1} onClick={()=>setResultPage(currentPage-1)}>Previous</button><span>{currentPage} / {totalPages}</span><button disabled={currentPage===totalPages} onClick={()=>setResultPage(currentPage+1)}>Next</button></div>
  {!shared&&!active(scan)&&<div className="toolbar"><button onClick={()=>void share()}><Link2 size={16}/>Copy report link</button><button onClick={()=>void share(true)}>Revoke report links</button></div>}

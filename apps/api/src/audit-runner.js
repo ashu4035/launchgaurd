@@ -15,7 +15,7 @@ export function isEmpty(value, type) {
 }
 export async function runAudit(job, {api, all, persist, token, read = safeRead}) {
   const started = Date.now();
-  job.findings = []; job.pageResults = []; job.publishedResults = []; job.coverage = null;
+  job.findings = []; job.pageResults = []; job.publishedResults = []; job.coverage = null; job.visualEvidencePartial=false;
   job.progress = {phase: 'Inventory', collections: 0, items: 0, pages: 0, checked: 0, skipped: 0, unverified: 0};
   const emit = (ruleId, props) => {
     const identity = [job.siteId, job.environment, ruleId, props.collectionId, props.itemId, props.pageId || props.url, props.field, props.resourceUrl, props.locale].join('|');
@@ -92,6 +92,6 @@ export async function runAudit(job, {api, all, persist, token, read = safeRead})
   await persist(); job.progress.phase = 'Published content';
   if(!job.scope?.skipPages)await auditPublished({site, pages, job, emit, persist, read});
   if(!job.progress.checked&&!job.coverage?.checked&&!job.findings.length)emit('no-coverage',{status:'Could not verify',source:'Page',title:'No applicable checks completed',detail:'The selected scope did not contain targets for the enabled checks.',fix:'Select CMS field rules for CMS-only scope, or include published pages.'});
-  job.partial = !!job.coverage?.limited || !!job.coverage?.unverified || !!job.coverage?.skipped || job.findings.some(f => f.status === 'Could not verify');
+  job.partial = !!job.visualEvidencePartial || !!job.coverage?.limited || !!job.coverage?.unverified || !!job.coverage?.skipped || job.findings.some(f => f.status === 'Could not verify');
   job.progress.phase = job.cancelled ? 'Cancelled' : 'Finished';
 }
