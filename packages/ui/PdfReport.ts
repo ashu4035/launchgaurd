@@ -49,7 +49,7 @@ export function createPdfReport(scan:{siteName?:string;environment?:string;statu
    const valid=(['closeup','context'] as const).filter(kind=>safeImage(capture[kind]));if(!valid.length)continue;
    // Keep both images and captions together, with their aspect ratios preserved.
    const slot=84,maxHeight=76;
-   const sizes=valid.map(kind=>{const image=pdf.getImageProperties(capture[kind]);const w=Math.min(slot,maxHeight*image.width/image.height);return{kind,w,h:w*image.height/image.width};});
+   const sizes=valid.map(kind=>{const image=pdf.getImageProperties(capture[kind]);const w=Math.min(slot,maxHeight*image.width/image.height,image.width*25.4/144);return{kind,w,h:w*image.height/image.width};});
    const height=Math.max(...sizes.map(s=>s.h));room(height+27);
    text(`Visual evidence: ${capture.viewport.width<600?'Mobile':'Desktop'} (${capture.viewport.width} x ${capture.viewport.height})`,10,true);
    const top=y;

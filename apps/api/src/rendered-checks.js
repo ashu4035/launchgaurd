@@ -7,7 +7,7 @@ export async function browserStatus(){
   catch{return {enabled:process.env.ENABLE_RENDERED_CHECKS==='true',installed:false};}
 }
 
-export async function isolatedPage(url, {enabled = process.env.ENABLE_RENDERED_CHECKS === 'true', read = safeRead, viewport={width:1280,height:800}, task} = {}) {
+export async function isolatedPage(url, {enabled = process.env.ENABLE_RENDERED_CHECKS === 'true', read = safeRead, viewport={width:1280,height:800}, deviceScaleFactor=1, task} = {}) {
   if (!enabled) return {verified:false,error:'Isolated Chromium checks are not enabled on this backend'};
   let browser;
   let watchdog;
@@ -15,7 +15,7 @@ export async function isolatedPage(url, {enabled = process.env.ENABLE_RENDERED_C
     const {chromium} = await import('playwright');
     browser = await chromium.launch({headless:true,timeout:10000,args:['--force-webrtc-ip-handling-policy=disable_non_proxied_udp']});
     watchdog=setTimeout(()=>{void browser.close().catch(()=>{});},18000);
-    const context = await browser.newContext({serviceWorkers:'block',acceptDownloads:false,viewport,isMobile:viewport.width<600,hasTouch:viewport.width<600});
+    const context = await browser.newContext({serviceWorkers:'block',acceptDownloads:false,viewport,deviceScaleFactor,isMobile:viewport.width<600,hasTouch:viewport.width<600});
     await context.addInitScript(()=>{Object.defineProperty(window,'RTCPeerConnection',{value:undefined,configurable:false});Object.defineProperty(window,'webkitRTCPeerConnection',{value:undefined,configurable:false});});
     let requests = 0;
     await context.routeWebSocket('**/*', socket => socket.close());

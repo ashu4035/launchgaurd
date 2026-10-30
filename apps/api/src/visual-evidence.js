@@ -13,7 +13,7 @@ export async function captureVisualEvidence(url, findings, options = {}) {
   if(!targets.length)return results;
   let bytes=0;
   for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
-    const rendered=await isolatedPage(url,{...options,viewport,task:async page=>{
+    const rendered=await isolatedPage(url,{...options,viewport,deviceScaleFactor:2,task:async page=>{
       const captures=[];
       for(const {id,target} of targets){
         if(options.cancelled?.())break;
@@ -40,8 +40,8 @@ export async function captureVisualEvidence(url, findings, options = {}) {
           const clip={x,y,width:Math.min(viewport.width-x,Math.ceil(box.width+48),700),height:Math.min(viewport.height-y,Math.ceil(box.height+48),400)};
           if(clip.width<1||clip.height<1)continue;
           const mask=[page.locator('input,textarea,[contenteditable="true"]')];
-          const closeup=await page.screenshot({type:'jpeg',quality:55,clip,mask,timeout:2500});
-          const context=await page.screenshot({type:'jpeg',quality:55,mask,timeout:2500});
+          const closeup=await page.screenshot({type:'jpeg',quality:95,clip,mask,timeout:2500});
+          const context=await page.screenshot({type:'jpeg',quality:85,mask,timeout:2500});
           const size=closeup.length+context.length;
           if(size>400000||bytes+size>1000000){captures.push({id,reason:'Screenshot byte limit reached.'});continue;}
           bytes+=size;

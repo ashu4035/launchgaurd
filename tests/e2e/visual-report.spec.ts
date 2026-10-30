@@ -40,7 +40,7 @@ test('captures real desktop/mobile red annotations, rejects ambiguous targets, a
   for(let i=0;i<data.length;i+=4)if(data[i]>170&&data[i+1]<100&&data[i+2]<100)red++;
   return{red,width:canvas.width,height:canvas.height};
  });
- expect(pixels.width).toBe(1440);expect(pixels.height).toBe(900);expect(pixels.red).toBeGreaterThan(30);
+ expect(pixels.width).toBe(2880);expect(pixels.height).toBe(1800);expect(pixels.red).toBeGreaterThan(30);
  const preview=exportVisualReport({siteName:'Controlled test site (fixture)',environment:'Staging',status:'complete',createdAt:'2026-10-28T00:00:00Z',findings:[finding]});
  await writeFile('test-results/visual-report-fixture.html',preview);
  await page.setContent(preview);
